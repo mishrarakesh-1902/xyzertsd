@@ -22,9 +22,10 @@ flowchart TD
 
     subgraph Frontend["React Frontend (:3000)"]
         Header["AppHeader & Controls"]
-        KPIs["KPI Cards (MAE, RMSE, Bias, Matched)"]
+        KPIs["KPI Cards (MAE, RMSE, Bias, P50-P95, Buffers)"]
         Chart["GenerationChart (Actuals vs Forecast vs Error)"]
         DistChart["ErrorDistributionChart (Daily Bias)"]
+        Horizon["HorizonChart (Lead-time horizon error curve)"]
         Table["ForecastTable (Interval drilldown)"]
         VintageModal["VintageModal (Publication timeline)"]
         QualityPanel["DataQualityPanel (Audit & Transparency)"]
@@ -63,12 +64,13 @@ flowchart TD
   - Strictly isolates delivery intervals to January 2026 (`2026-01-01T00:00:00Z` to `2026-01-31T23:30:00Z`).
   - Preserves forecast records published in December 2025 for January 2026 deliveries.
 - **`ForecastSelectionEngine` (`backend/app/services/forecast_selection.py`)**:
-  - Applies configurable market decision cutoffs (e.g. Day-Ahead 12:00 GMT, 17:00 GMT, 09:00 GMT, Rolling 24h/12h/48h).
+  - Applies configurable market decision cutoffs defaulting strictly to **Day-Ahead 09:20 UK time (EPEX SPOT GB auction gate closure)** computed in the `Europe/London` timezone (zoneinfo) and converted to UTC.
   - Eliminates look-ahead bias: strictly rejects forecasts published after the decision cutoff.
+  - Retains alternative sensitivity cutoffs: Day-Ahead 09:00 UK, Day-Ahead 12:00 UK (late sensitivity case), Day-Ahead 17:00 UK, rolling lead times (12h, 24h, 48h), and gate closure (0h).
   - Selects `max(publishTime)` among eligible records for each target delivery interval.
   - Supports resolution alignment modes: `exact` (:00 hourly) and `hourly_block` (half-hourly mapped).
 - **`MetricsEngine` (`backend/app/services/metrics.py`)**:
-  - Computes `MAE`, `RMSE`, and forecast `Bias` strictly over valid matched delivery intervals.
+  - Computes `MAE`, `RMSE`, `Bias`, Normalised MAE (`nMAE %`), Error Percentiles (`P50`, `P90`, `P95`), Extreme errors, and Decision Buffers (P95 shortfall and over-forecast boundaries) strictly over valid matched delivery intervals.
   - Implements safe empty-dataset handling without division-by-zero errors.
 
 ---

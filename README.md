@@ -1,11 +1,18 @@
 # WindScope — UK Wind Forecast Intelligence
 ### Full-Stack Renewable Energy Forecast Analysis Platform | React + Python + Docker
 
-[![Backend Tests](https://img.shields.io/badge/pytest-18%20passed-emerald)](backend/tests)
+[![Backend Tests](https://img.shields.io/badge/pytest-23%20passed-emerald)](backend/tests)
 [![Frontend Tests](https://img.shields.io/badge/vitest-3%20passed-emerald)](frontend/src/App.test.jsx)
-[![Docker](https://img.shields.io/badge/docker--compose-v3.8-blue)](docker-compose.yml)
+[![Docker](https://img.shields.io/badge/docker--compose-ready-blue)](docker-compose.yml)
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI%200.110-teal)](backend/app)
 [![React](https://img.shields.io/badge/frontend-React%2018%20%2B%20Vite-indigo)](frontend)
+
+---
+
+## Live Demo & Video Presentation
+
+- **Live app**: <PASTE_DEPLOYED_URL>
+- **Video demo**: <PASTE_UNLISTED_YOUTUBE_URL>
 
 ---
 
@@ -22,16 +29,19 @@ The application evaluates national-level renewable wind generation forecasts aga
 An energy utility operating in the UK wholesale electricity market must purchase electricity one day prior to delivery to reliably meet consumer demand.
 
 1. **Weather Dependency**: Wind power generation is intermittent and weather-dependent. Trading teams need to know how much electricity must be additionally procured (e.g. from thermal or hydro plants) beyond expected wind power.
-2. **Day-Ahead Deadlines**: Day-ahead wholesale auctions (EPEX SPOT and Nord Pool GB auctions) close on Day $D-1$ (typically around 11:00 or 12:00 GMT). Procurement commitments are locked in at that point.
+2. **Day-Ahead Gate Closures**: The GB Day-Ahead auction gate closures occur on Day $D-1$ at approximately **09:20 UK time** for EPEX GB (10:20 CET) and **09:50 UK time** for N2EX. Procurement commitments are locked in at that point. Using a later cutoff (such as 12:00 or 17:00) allows the analysis to consume forecasts a trader would not have had at gate closure. WindScope defaults strictly to **Day-Ahead 09:20 UK time (EPEX GB)** computed in the `Europe/London` timezone.
 3. **Core Objectives**:
-   - **Historical Forecast Visibility**: Clearly understand the exact renewable generation forecasts that were available when purchasing decisions had to be made (eliminating look-ahead bias).
-   - **Quantitative Accuracy Evaluation**: Measure Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and Forecast Bias (Mean Signed Error) to account for risk in procurement bids.
+   - **Historical Forecast Visibility**: Clearly understand the exact renewable generation forecasts that were available when purchasing decisions had to be made (strictly eliminating look-ahead bias).
+   - **Quantitative Accuracy & Risk-Sizing**: Measure Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), Forecast Bias, Normalised MAE (nMAE %), Error percentiles (P50, P90, P95), and empirical shortfall buffers to inform procurement decisions.
+   - **Lead-Time Horizon Analysis**: Evaluate how forecast accuracy decays as lead time increases from 0-6 hours up to 48+ hours ahead.
 
 ---
 
 ## 3. Main Features
 
-- **Anti-Lookahead Decision Snapshot**: Selects the latest eligible forecast published *on or before* the user-selected decision cutoff (e.g. Day-Ahead 12:00 UTC, 17:00 UTC, 09:00 UTC, rolling 24h/12h/48h, or gate closure).
+- **Anti-Lookahead Decision Snapshot**: Selects the latest eligible forecast published *on or before* the market decision cutoff (default: **Day-Ahead 09:20 UK time EPEX GB**, with sensitivity options for 09:00, 12:00 late case, 17:00, rolling 12h/24h/48h, and gate closure).
+- **Lead-Time Horizon Error Curve**: Multi-horizon breakdown analyzing error growth across lead time buckets (0-6h, 6-12h, 12-24h, 24-36h, 36-48h, 48h+) across all forecast vintages.
+- **Risk-Sizing & Procurement Buffer Cards**: Direct decision support featuring P50, P90, P95 absolute error, Normalised MAE %, and suggested wind shortfall buffers (P95 under-forecast boundary).
 - **Interactive Time-Series Visualization**: Dual-axis chart rendering actual wind generation (FUELHH), selected forecast (WINDFOR), and signed error with hover tooltips and settlement period indicators.
 - **Forecast Vintage Evolution Inspector**: Drill down into any delivery interval to view the complete publication timeline of all issued forecast updates and their cutoff eligibility status.
 - **Daily Error & Bias Distribution**: Visualizes day-by-day systematic over/underforecasting tendencies.
@@ -143,6 +153,7 @@ windscope/
 │   │   │   ├── DateRangeFilter.jsx     # January date presets & custom date pickers
 │   │   │   ├── GenerationChart.jsx     # Recharts actuals vs forecast vs error chart
 │   │   │   ├── ErrorDistributionChart.jsx # Daily bias & MAE bar chart
+│   │   │   ├── HorizonChart.jsx        # Lead-time horizon error curve (0-6h to 48h+)
 │   │   │   ├── ForecastTable.jsx       # Interval records table with pagination & search
 │   │   │   ├── VintageModal.jsx        # Historical publication evolution modal
 │   │   │   ├── DataQualityPanel.jsx    # Audit & methodology transparency modal
@@ -234,19 +245,26 @@ For each delivery interval $T$:
 
 ## 11. Decision Cutoff Assumptions
 
-Because wholesale power auction schedules vary, WindScope implements configurable decision cutoffs:
+Wholesale power auction schedules govern when trading commitments lock. In the UK market, the GB Day-Ahead auction gate closure occurs on Day $D-1$ at **09:20 UK time** for EPEX SPOT GB (10:20 CET) and **09:50 UK time** for Nord Pool N2EX. 
 
-1. **Day-Ahead 12:00 UTC (`d1_1200`) — Default Benchmark**:
-   - Cutoff: $(D - 1 \text{ day})$ at 12:00:00 UTC.
-   - *Rationale*: Corresponds to the UK EPEX SPOT and Nord Pool Day-Ahead auction order book closure.
-2. **Day-Ahead 17:00 UTC (`d1_1700`)**:
-   - Cutoff: $(D - 1 \text{ day})$ at 17:00:00 UTC (Post-auction / Evening Schedule).
-3. **Day-Ahead 09:00 UTC (`d1_0900`)**:
-   - Cutoff: $(D - 1 \text{ day})$ at 09:00:00 UTC (Pre-auction morning briefing).
-4. **Rolling Lead-Time Cutoffs (`lead_24h`, `lead_12h`, `lead_48h`)**:
+To strictly prevent look-ahead bias, cutoffs are evaluated in the `Europe/London` timezone (via Python's `zoneinfo` with IANA tzdata) and converted to UTC:
+
+1. **Day-Ahead 09:20 UK (`d1_0920`) — Default Benchmark**:
+   - Cutoff: $(D - 1 \text{ day})$ at 09:20:00 UK local time (`Europe/London`).
+   - *Rationale*: Matches the actual EPEX SPOT GB Day-Ahead auction gate closure. Using 12:00 allows an analysis to access forecasts published after bids close, misrepresenting information traders actually possessed.
+2. **Day-Ahead 09:00 UK (`d1_0900`)**:
+   - Cutoff: $(D - 1 \text{ day})$ at 09:00:00 UK local time (`Europe/London`).
+   - *Rationale*: Pre-auction morning briefing snapshot 20 minutes prior to order book closure.
+3. **Day-Ahead 12:00 UK (`d1_1200`) — Late / Sensitivity Case**:
+   - Cutoff: $(D - 1 \text{ day})$ at 12:00:00 UK local time (`Europe/London`).
+   - *Rationale*: Sensitivity case after real gate closure, previously used as an informal benchmark.
+4. **Day-Ahead 17:00 UK (`d1_1700`)**:
+   - Cutoff: $(D - 1 \text{ day})$ at 17:00:00 UK local time (`Europe/London`).
+   - *Rationale*: Post-auction evening physical notification schedule.
+5. **Rolling Lead-Time Cutoffs (`lead_24h`, `lead_12h`, `lead_48h`)**:
    - Cutoff: Delivery timestamp minus 24, 12, or 48 hours.
-5. **Gate Closure / 0h Lead Time (`latest`)**:
-   - Cutoff: Delivery timestamp.
+6. **Gate Closure / 0h Lead Time (`latest`)**:
+   - Cutoff: Target delivery timestamp ($T$).
 
 ---
 
@@ -285,17 +303,59 @@ $$\text{RMSE} = \sqrt{\frac{1}{n} \sum_{i=1}^n \left( \text{Forecast}_i - \text{
 ### Forecast Bias (Mean Signed Error)
 $$\text{Bias} = \frac{1}{n} \sum_{i=1}^n \left( \text{Forecast}_i - \text{Actual}_i \right)$$
 
+### Normalised MAE (nMAE %)
+$$\text{nMAE} = \frac{\text{MAE}}{\frac{1}{n}\sum_{i=1}^n \text{Actual}_i} \times 100\%$$
+
+### Risk-Sizing Percentiles & Decision Buffers
+- **P50 / P90 / P95 Absolute Error**: Computed via linear interpolation over sorted $|e_i|$.
+- **Suggested Wind Shortfall Buffer (P95 Under-Forecast)**: 95th percentile of $(Actual - Forecast)$ on intervals where actual wind exceeded forecast ($A > F$). In procurement, this represents the generation buffer to cover downside wind risk.
+- **Over-Forecast Boundary (P95 Over-Forecast)**: 95th percentile of $(Forecast - Actual)$ on intervals where wind was over-estimated ($F > A$).
+
 ---
 
-## 15. Installation & Prerequisites
+## 15. January 2026 Computed Baseline Performance
 
-- **Python**: 3.11 or 3.12
+Under the domain-accurate **Day-Ahead 09:20 UK time (EPEX GB)** default cutoff:
+
+| Metric | Exact Hourly (`exact`) | Half-Hourly Block (`hourly_block`) |
+| :--- | :--- | :--- |
+| **Evaluated Intervals ($n$)** | **744 / 744 (100%)** | **1,488 / 1,488 (100%)** |
+| **Mean Absolute Error (MAE)** | **2,127.48 MW** | **2,145.17 MW** |
+| **Root Mean Squared Error (RMSE)** | **2,606.07 MW** | **2,615.81 MW** |
+| **Forecast Bias** | **+1,851.53 MW** (Over-forecast) | **+1,851.90 MW** (Over-forecast) |
+| **Normalised MAE (nMAE)** | **18.37%** (Mean: 11,581.11 MW) | **18.52%** (Mean: 11,580.74 MW) |
+| **P50 Absolute Error (Median)** | **1,758.50 MW** | **1,795.50 MW** |
+| **P90 Absolute Error** | **4,306.40 MW** | **4,274.90 MW** |
+| **P95 Absolute Error** | **5,350.90 MW** | **5,340.95 MW** |
+| **Suggested Wind Shortfall Buffer** | **2,374.00 MW** | **2,333.40 MW** |
+| **P95 Over-Forecast Boundary** | **5,504.50 MW** | **5,431.70 MW** |
+| **Worst Single Over-Forecast** | **+6,894.00 MW** (2026-01-12 01:00Z) | **+6,894.00 MW** (2026-01-12 01:00Z) |
+| **Worst Single Under-Forecast** | **-3,389.00 MW** (2026-01-08 19:00Z) | **-3,835.00 MW** (2026-01-08 18:30Z) |
+
+### Forecast Error by Lead-Time Horizon (All Vintages)
+
+| Horizon Bucket | MAE (MW) | RMSE (MW) | Bias (MW) | Sample Size ($n$) |
+| :--- | :--- | :--- | :--- | :--- |
+| **0–6h Ahead** | 1,767.72 MW | 2,249.21 MW | +1,548.25 MW | 1,488 |
+| **6–12h Ahead** | 1,833.73 MW | 2,304.38 MW | +1,616.10 MW | 1,488 |
+| **12–24h Ahead** | 1,990.88 MW | 2,474.17 MW | +1,811.20 MW | 2,976 |
+| **24–36h Ahead** | 2,122.56 MW | 2,586.87 MW | +1,838.48 MW | 2,976 |
+| **36–48h Ahead** | 2,337.01 MW | 2,866.21 MW | +2,004.50 MW | 2,945 |
+| **48h+ Ahead** | 2,371.92 MW | 2,977.90 MW | +1,479.56 MW | 2,510 |
+
+*Key Takeaway*: Forecast error increases with lead time: the 0-6h Ahead horizon achieved the lowest MAE (1,767.72 MW), while the 48h+ Ahead horizon had the highest uncertainty (2,371.92 MW MAE).
+
+---
+
+## 16. Installation & Prerequisites
+
+- **Python**: 3.11 or 3.12 (with `tzdata` for Windows timezone resolution)
 - **Node.js**: v18+ or v20+
 - **Docker**: Version 24+ with Docker Compose v2+ (Optional for containerized run)
 
 ---
 
-## 16. How to Start the Backend Locally
+## 17. How to Start the Backend Locally
 
 ```bash
 # 1. Navigate to backend directory
@@ -322,7 +382,7 @@ The backend API and interactive OpenAPI documentation will be live at:
 
 ---
 
-## 17. How to Start the Frontend Locally
+## 18. How to Start the Frontend Locally
 
 ```bash
 # 1. Navigate to frontend directory
@@ -339,7 +399,7 @@ The React frontend dashboard will be live at:
 
 ---
 
-## 18. How to Run Automated Tests
+## 19. How to Run Automated Tests
 
 ### Backend Unit & Integration Tests (Pytest)
 ```bash
@@ -349,14 +409,14 @@ The React frontend dashboard will be live at:
 # Or from inside backend/:
 pytest -v
 ```
-*Result: 18 automated tests passing (Metrics, Forecast Selection, Data Cleaning, API Endpoints).*
+*Result: 23 automated tests passing (Metrics, Risk-Sizing, Horizon, Forecast Selection, Data Cleaning, Health, and API Endpoints).*
 
 ### Frontend Component Tests (Vitest)
 ```bash
 # From inside frontend/:
 npm test
 ```
-*Result: 3 test suites passing (App rendering, KPI metrics, and error handling).*
+*Result: 3 test suites passing (App rendering, KPI metrics, Horizon chart, and error handling).*
 
 ### Frontend Production Build Verification
 ```bash
@@ -366,7 +426,7 @@ npm run build
 
 ---
 
-## 19. How to Run with Docker Compose
+## 20. How to Run with Docker Compose
 
 To build and run the entire production-grade multi-container stack with a single command:
 
@@ -384,7 +444,7 @@ docker-compose down
 
 ---
 
-## 20. Required Environment Variables
+## 21. Required Environment Variables
 
 Copy `.env.example` to `.env`:
 
@@ -397,38 +457,43 @@ ELEXON_API_BASE_URL=https://data.elexon.co.uk/bmrs/api/v1
 DATA_CACHE_DIR=./data/cache
 
 # Frontend Configuration
+# Uses nullish coalescing (??):
+# - Set to an empty string ("") for same-origin relative /api paths (e.g. reverse proxy)
+# - Set to an absolute URL (e.g. https://api.yourdomain.com) for cross-origin deployments
+# - Leave unset/undefined to fall back to http://localhost:8000 for local development
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
 ---
 
-## 21. Deployment Instructions
+## 22. Deployment Instructions
 
 ### Frontend Deployment on Vercel
 1. Set the root directory to `frontend`.
 2. Framework Preset: `Vite`.
 3. Build Command: `npm run build`.
 4. Output Directory: `dist`.
-5. Environment Variable: `VITE_API_BASE_URL=<DEPLOYED_BACKEND_URL>`.
+5. Environment Variable: Set `VITE_API_BASE_URL` to your deployed backend URL (e.g. `https://your-backend.herokuapp.com`).
 
-### Backend Deployment on Heroku / Render / Cloud Run
-1. Deploy the `backend/` directory using Python runtime (or Dockerfile).
-2. Set environment variables:
+### Backend Deployment on Heroku
+1. Create a Heroku application using the Python buildpack (or container stack).
+2. Set root context or deploy `backend/` subtree.
+3. Configure environment variables in the Heroku Dashboard:
    - `PORT=8000`
-   - `CORS_ORIGINS=https://<YOUR_FRONTEND_DOMAIN>`
+   - `CORS_ORIGINS=https://<YOUR_VERCEL_FRONTEND_DOMAIN>`
    - `ELEXON_API_BASE_URL=https://data.elexon.co.uk/bmrs/api/v1`
 
 ---
 
-## 22. Links to Deployed Application & Repository
+## 23. Links to Deployed Application & Repository
 
-- **Public GitHub Repository**: Anonymous repo prepared for submission (see Git instructions below).
-- **Video Demonstration**: [Unlisted YouTube Walkthrough (10-minute presentation)](docs/video_demo_script.md)
-- **Production Web App**: Configured for Vercel / Heroku deployment.
+- **Live app**: <PASTE_DEPLOYED_URL>
+- **Video demo**: <PASTE_UNLISTED_YOUTUBE_URL>
+- **Public GitHub Repository**: Anonymous submission repository
 
 ---
 
-## 23. Known Limitations & Upstream Characteristics
+## 24. Known Limitations & Upstream Characteristics
 
 1. **Time Resolution Asymmetry**:
    - `FUELHH` outturn is published half-hourly (1,488 intervals for January 2026).
@@ -439,14 +504,14 @@ VITE_API_BASE_URL=http://localhost:8000
 
 ---
 
-## 24. AI Tool Disclosure
+## 25. AI Tool Disclosure
 
 In compliance with the assignment submission requirements:
 - **AI Coding Assistant**: Google DeepMind Antigravity was used to assist with architectural planning, component scaffolding, test drafting, and documentation synthesis. All code, data pipelines, mathematical formulas, and tests have been independently implemented, verified, and executed.
 
 ---
 
-## 25. Design Decisions & Trade-Offs
+## 26. Design Decisions & Trade-Offs
 
 - **FastAPI over Django/Flask**: Selected for native asynchronous support, Pydantic v2 type safety, high throughput, and automatic OpenAPI schema generation.
 - **In-Memory + File Caching over Relational Database**: Avoided unnecessary PostgreSQL/SQLite overhead since the January 2026 dataset is bounded (1,488 delivery periods). JSON caching provides instantaneous response times, zero database migrations, and 100% reproducibility.

@@ -34,21 +34,25 @@ If $\mathcal{E}(T) = \emptyset$, no eligible forecast was available by the cutof
 
 ### 2.3 Supported Cutoff Strategies
 
-1. **Day-Ahead 12:00 UTC (`d1_1200`) — Default Benchmark**:
-   $$C(T) = (D - 1 \text{ day}) \text{ at 12:00:00 UTC}$$
-   *Rationale*: Matches the standard daily auction gate closure on the UK EPEX SPOT and Nord Pool wholesale power exchanges.
-2. **Day-Ahead 17:00 UTC (`d1_1700`)**:
-   $$C(T) = (D - 1 \text{ day}) \text{ at 17:00:00 UTC}$$
-   *Rationale*: Post-auction evening schedule finalization.
-3. **Day-Ahead 09:00 UTC (`d1_0900`)**:
-   $$C(T) = (D - 1 \text{ day}) \text{ at 09:00:00 UTC}$$
-   *Rationale*: Pre-auction morning trading preparation.
-4. **Rolling Lead-Time Cutoffs (`lead_24h`, `lead_12h`, `lead_48h`)**:
-   $$C(T) = T - \Delta t$$
-   where $\Delta t \in \{12\text{h}, 24\text{h}, 48\text{h}\}$.
-5. **Intraday / Gate Closure (`latest`)**:
+All Day-Ahead cutoffs are evaluated in the `Europe/London` timezone (via Python `zoneinfo`) and converted to UTC, ensuring resilience to British Summer Time (BST) outside winter months:
+
+1. **Day-Ahead 09:20 UK time (`d1_0920`) — Default Benchmark**:
+   $$C(T) = (D - 1 \text{ day}) \text{ at 09:20:00 UK local time (converted to UTC)}$$
+   *Rationale*: Corresponds directly to the EPEX SPOT GB Day-Ahead wholesale auction gate closure (10:20 CET / 09:20 UK). Using later cutoffs introduces look-ahead bias by incorporating forecasts that were not available when traders committed order books.
+2. **Day-Ahead 09:00 UK time (`d1_0900`)**:
+   $$C(T) = (D - 1 \text{ day}) \text{ at 09:00:00 UK local time}$$
+   *Rationale*: Pre-auction desk briefing snapshot prior to gate closure.
+3. **Day-Ahead 12:00 UK time (`d1_1200`) — Late / Sensitivity Case**:
+   $$C(T) = (D - 1 \text{ day}) \text{ at 12:00:00 UK local time}$$
+   *Rationale*: Sensitivity case after real gate closure, previously used in preliminary analysis.
+4. **Day-Ahead 17:00 UK time (`d1_1700`)**:
+   $$C(T) = (D - 1 \text{ day}) \text{ at 17:00:00 UK local time}$$
+   *Rationale*: Post-auction evening physical notification schedule.
+5. **Rolling Lead-Time Cutoffs (`lead_24h`, `lead_12h`, `lead_48h`)**:
+   $$C(T) = T - \Delta t \quad \text{where } \Delta t \in \{12\text{h}, 24\text{h}, 48\text{h}\}$$
+6. **Intraday / Gate Closure (`latest`)**:
    $$C(T) = T$$
-   Latest forecast published on or before the start of the delivery interval.
+   Latest forecast published on or before the start of delivery interval $T$.
 
 ---
 
@@ -84,6 +88,24 @@ $$\text{Bias} = \frac{1}{n} \sum_{i=1}^n \left( F_i - A_i \right)$$
 - **Unit**: Megawatts (MW).
 - **Interpretation**: Identifies systematic overestimation ($\text{Bias} > 0$) or underestimation ($\text{Bias} < 0$) in the numerical weather models.
 
+### 3.5 Normalised MAE (nMAE %)
+
+$$\text{nMAE} = \frac{\text{MAE}}{\frac{1}{n}\sum_{i=1}^n A_i} \times 100\%$$
+
+- **Interpretation**: Scales absolute forecast deviation against mean actual generation, enabling cross-month and cross-portfolio benchmarking.
+
+### 3.6 Risk-Sizing Percentiles & Procurement Buffers
+
+- **P50 / P90 / P95 Absolute Error**: Computed via linear interpolation over sorted absolute errors $|F_i - A_i|$.
+- **Suggested Wind Shortfall Buffer (P95 Under-Forecast)**: 95th percentile of $(A_i - F_i)$ when actuals exceed forecasts ($A > F$). In procurement, this represents the volume of thermal/flexible capacity a trader should reserve to mitigate unexpected wind drops.
+- **P95 Over-Forecast Boundary**: 95th percentile of $(F_i - A_i)$ when forecasts exceed actuals ($F > A$).
+
+### 3.7 Lead-Time Horizon Error Analysis
+
+For each forecast record across all published vintages, lead time is defined as:
+$$\text{Lead} = \text{deliveryTime} - \text{publishTime} \quad (\text{hours})$$
+Evaluated across six standard operational horizons: `0–6h`, `6–12h`, `12–24h`, `24–36h`, `36–48h`, and `48h+`.
+
 ---
 
 ## 4. Elexon BMRS Dataset Reconciliation
@@ -106,3 +128,24 @@ WindScope provides transparent support for both evaluation perspectives:
    Evaluates only the 744 hourly timestamps (`:00`) where both datasets natively share identical delivery timestamps.
 2. **Hourly Block Mapping (`hourly_block`)**:
    Maps each hourly forecast $F(H)$ to both half-hour intervals of that hour ($H:00$ and $H:30$), evaluating all 1,488 intervals of the month.
+
+---
+
+## 5. Verified January 2026 Performance Metrics
+
+Computed on official Elexon January 2026 datasets with the default **Day-Ahead 09:20 UK time (EPEX GB)** cutoff:
+
+| Metric | Exact Hourly (`exact`, $n=744$) | Hourly Block (`hourly_block`, $n=1488$) |
+| :--- | :--- | :--- |
+| **Mean Absolute Error (MAE)** | **2,127.48 MW** | **2,145.17 MW** |
+| **Root Mean Squared Error (RMSE)** | **2,606.07 MW** | **2,615.81 MW** |
+| **Forecast Bias** | **+1,851.53 MW** (Over-forecast) | **+1,851.90 MW** (Over-forecast) |
+| **Normalised MAE (nMAE)** | **18.37%** (Mean: 11,581.11 MW) | **18.52%** (Mean: 11,580.74 MW) |
+| **P50 Absolute Error (Median)** | **1,758.50 MW** | **1,795.50 MW** |
+| **P90 Absolute Error** | **4,306.40 MW** | **4,274.90 MW** |
+| **P95 Absolute Error** | **5,350.90 MW** | **5,340.95 MW** |
+| **Suggested Shortfall Buffer (P95 Under-Forecast)** | **2,374.00 MW** | **2,333.40 MW** |
+| **P95 Over-Forecast Boundary** | **5,504.50 MW** | **5,431.70 MW** |
+| **Worst Over-Forecast** | **+6,894.00 MW** (2026-01-12 01:00Z) | **+6,894.00 MW** (2026-01-12 01:00Z) |
+| **Worst Under-Forecast** | **-3,389.00 MW** (2026-01-08 19:00Z) | **-3,835.00 MW** (2026-01-08 18:30Z) |
+| **Interval Completeness** | **100% (744/744)** | **100% (1,488/1,488)** |

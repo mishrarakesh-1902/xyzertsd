@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 class ApiService {
   async request(endpoint, options = {}) {
@@ -28,7 +28,7 @@ class ApiService {
     } catch (error) {
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         throw new Error(
-          `Unable to connect to WindScope backend API at ${API_BASE_URL}. Ensure the backend service is running on port 8000.`
+          `Unable to connect to WindScope backend API at ${API_BASE_URL || 'same-origin'}. Ensure the backend service is running.`
         );
       }
       throw error;
@@ -43,7 +43,7 @@ class ApiService {
     return this.request('/api/forecasts/cutoffs');
   }
 
-  async getAnalysis({ cutoffType = 'd1_1200', customCutoff = null, alignment = 'exact', startDate = null, endDate = null } = {}) {
+  async getAnalysis({ cutoffType = 'd1_0920', customCutoff = null, alignment = 'exact', startDate = null, endDate = null } = {}) {
     const params = new URLSearchParams();
     if (cutoffType) params.append('cutoff_type', cutoffType);
     if (customCutoff) params.append('custom_cutoff', customCutoff);
@@ -54,7 +54,16 @@ class ApiService {
     return this.request(`/api/analysis?${params.toString()}`);
   }
 
-  async getVintages(deliveryTime, cutoffType = 'd1_1200', customCutoff = null) {
+  async getHorizonAnalysis({ alignment = 'exact', startDate = null, endDate = null } = {}) {
+    const params = new URLSearchParams();
+    if (alignment) params.append('alignment', alignment);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    return this.request(`/api/analysis/horizon?${params.toString()}`);
+  }
+
+  async getVintages(deliveryTime, cutoffType = 'd1_0920', customCutoff = null) {
     const params = new URLSearchParams();
     params.append('delivery_time', deliveryTime);
     if (cutoffType) params.append('cutoff_type', cutoffType);

@@ -25,10 +25,25 @@ class MatchedRecord(BaseModel):
     absError: Optional[float] = Field(None, description="|forecast - actual| (MW)")
     status: str = Field(..., description="Status: MATCHED, MISSING_FORECAST, MISSING_ACTUAL")
 
+class ExtremeRecord(BaseModel):
+    error: float = Field(..., description="Signed error (forecast - actual) in MW")
+    deliveryTime: str = Field(..., description="Target delivery timestamp (ISO 8601 UTC)")
+    actualGeneration: Optional[float] = Field(None, description="Actual wind generation in MW")
+    forecastGeneration: Optional[float] = Field(None, description="Forecast wind generation in MW")
+
 class AnalysisMetrics(BaseModel):
     mae: Optional[float] = Field(None, description="Mean Absolute Error in MW: mean(|forecast - actual|)")
     rmse: Optional[float] = Field(None, description="Root Mean Squared Error in MW: sqrt(mean((forecast - actual)^2))")
     bias: Optional[float] = Field(None, description="Forecast Bias (Mean Signed Error) in MW: mean(forecast - actual)")
+    p50AbsoluteError: Optional[float] = Field(None, description="50th percentile (Median) of absolute error in MW")
+    p90AbsoluteError: Optional[float] = Field(None, description="90th percentile of absolute error in MW")
+    p95AbsoluteError: Optional[float] = Field(None, description="95th percentile of absolute error in MW")
+    normalizedMaePct: Optional[float] = Field(None, description="Normalised MAE: (MAE / mean(actual)) * 100 (%)")
+    meanActualGeneration: Optional[float] = Field(None, description="Mean actual generation in MW across matched intervals")
+    maxOverforecast: Optional[ExtremeRecord] = Field(None, description="Single worst interval overforecast (highest positive error)")
+    maxUnderforecast: Optional[ExtremeRecord] = Field(None, description="Single worst interval underforecast (most negative error)")
+    p95OverforecastError: Optional[float] = Field(None, description="95th percentile overforecast in MW (suggested upside buffer)")
+    p95UnderforecastError: Optional[float] = Field(None, description="95th percentile underforecast magnitude in MW (suggested thermal shortfall buffer)")
     matchedIntervals: int = Field(0, description="Number of valid intervals where both actual and forecast exist")
     totalIntervalsEvaluated: int = Field(0, description="Total delivery intervals evaluated in date range")
     overforecastCount: int = Field(0, description="Number of intervals where forecast > actual")
@@ -87,3 +102,19 @@ class VintageResponse(BaseModel):
     cutoffApplied: str
     totalVintages: int
     vintages: List[VintageItem]
+
+class HorizonBucketResult(BaseModel):
+    bucket: str = Field(..., description="Lead time bucket identifier, e.g. '0-6h', '6-12h'")
+    label: str = Field(..., description="Human-readable label, e.g. '0-6h Ahead'")
+    minLeadHours: float
+    maxLeadHours: Optional[float] = None
+    mae: Optional[float] = Field(None, description="Mean Absolute Error in MW")
+    rmse: Optional[float] = Field(None, description="Root Mean Squared Error in MW")
+    bias: Optional[float] = Field(None, description="Forecast Bias in MW")
+    n: int = Field(..., description="Count of evaluated forecast-actual pairs")
+
+class HorizonAnalysisResponse(BaseModel):
+    period: Dict[str, str]
+    alignment: str
+    buckets: List[HorizonBucketResult]
+    takeaway: str = Field(..., description="Plain-English takeaway summarizing horizon performance")

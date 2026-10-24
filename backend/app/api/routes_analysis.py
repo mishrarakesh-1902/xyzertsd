@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
-from ..models.schemas import AnalysisResponse
+from ..models.schemas import AnalysisResponse, HorizonAnalysisResponse
 from ..services.data_pipeline import pipeline
 
 logger = logging.getLogger(__name__)
@@ -9,7 +9,7 @@ router = APIRouter(tags=["Analysis"])
 
 @router.get("/analysis", response_model=AnalysisResponse)
 def get_analysis(
-    cutoff_type: str = Query("d1_1200", description="Cutoff rule id (e.g. d1_1200, lead_24h, latest)"),
+    cutoff_type: str = Query("d1_0920", description="Cutoff rule id (e.g. d1_0920, d1_1200, lead_24h, latest)"),
     custom_cutoff: Optional[str] = Query(None, description="Custom cutoff ISO datetime if cutoff_type=custom"),
     alignment: str = Query("exact", pattern="^(exact|hourly_block)$", description="Alignment resolution: exact or hourly_block"),
     start_date: Optional[str] = Query(None, description="Filter start timestamp or date (YYYY-MM-DD or ISO)"),
@@ -20,7 +20,6 @@ def get_analysis(
     Computes MAE, RMSE, forecast bias, and aligned time series using the chosen cutoff.
     """
     try:
-        # Normalize date strings if passed as YYYY-MM-DD
         start_iso = start_date
         if start_date and len(start_date) == 10:
             start_iso = f"{start_date}T00:00:00Z"
@@ -40,6 +39,34 @@ def get_analysis(
     except Exception as e:
         logger.exception("Error executing analysis query")
         raise HTTPException(status_code=500, detail=f"Failed to generate analysis: {str(e)}")
+
+@router.get("/analysis/horizon", response_model=HorizonAnalysisResponse)
+def get_horizon_analysis(
+    alignment: str = Query("exact", pattern="^(exact|hourly_block)$", description="Alignment resolution: exact or hourly_block"),
+    start_date: Optional[str] = Query(None, description="Filter start timestamp or date (YYYY-MM-DD or ISO)"),
+    end_date: Optional[str] = Query(None, description="Filter end timestamp or date (YYYY-MM-DD or ISO)"),
+):
+    """
+    Returns forecast error metrics (MAE, RMSE, bias, sample size) segmented by lead-time horizon
+    (0-6h, 6-12h, 12-24h, 24-36h, 36-48h, 48h+) across ALL forecast publication vintages.
+    """
+    try:
+        start_iso = start_date
+        if start_date and len(start_date) == 10:
+            start_iso = f"{start_date}T00:00:00Z"
+
+        end_iso = end_date
+        if end_date and len(end_date) == 10:
+            end_iso = f"{end_date}T23:59:59Z"
+
+        return pipeline.get_horizon_analysis(
+            alignment=alignment,
+            start_date=start_iso,
+            end_date=end_iso,
+        )
+    except Exception as e:
+        logger.exception("Error executing horizon analysis query")
+        raise HTTPException(status_code=500, detail=f"Failed to generate horizon analysis: {str(e)}")
 
 @router.post("/analysis/refresh")
 def refresh_data():

@@ -3,22 +3,28 @@ from .schemas import (
     FuelHHRecord,
     WindforRecord,
     MatchedRecord,
+    ExtremeRecord,
     AnalysisMetrics,
     DataQualityReport,
     AnalysisResponse,
     CutoffOption,
     VintageItem,
     VintageResponse,
+    HorizonBucketResult,
+    HorizonAnalysisResponse,
 )
 
 __all__ = [
     "FuelHHRecord",
     "WindforRecord",
     "MatchedRecord",
+    "ExtremeRecord",
     "AnalysisMetrics",
     "DataQualityReport",
     "AnalysisResponse",
     "CutoffOption",
     "VintageItem",
     "VintageResponse",
+    "HorizonBucketResult",
+    "HorizonAnalysisResponse",
 ]

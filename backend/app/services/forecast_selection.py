@@ -1,4 +1,5 @@
 import logging
+import zoneinfo
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
@@ -12,27 +13,39 @@ from ..models.schemas import (
 )
 from .data_cleaning import parse_utc_timestamp, format_iso_utc, generate_expected_intervals
 
-logger = logging.getLogger(__name__)
+try:
+    import zoneinfo
+    LONDON_TZ = zoneinfo.ZoneInfo("Europe/London")
+except Exception:
+    from dateutil import tz
+    LONDON_TZ = tz.gettz("Europe/London")
 
 CUTOFF_OPTIONS: List[CutoffOption] = [
     CutoffOption(
-        id="d1_1200",
-        label="Day-Ahead 12:00 UTC (D-1 12:00)",
-        description="Forecasts published by 12:00 UTC on the day before delivery. Standard UK Day-Ahead wholesale market auction benchmark (EPEX/NordPool).",
+        id="d1_0920",
+        label="Day-Ahead gate closure 09:20 UK (EPEX GB)",
+        description="Forecasts published by 09:20 UK time on D-1. Corresponds to the EPEX SPOT GB Day-Ahead auction gate closure (10:20 CET). Primary auction benchmark.",
         isDefault=True,
         group="Day-Ahead Auction Cutoffs",
     ),
     CutoffOption(
-        id="d1_1700",
-        label="Day-Ahead 17:00 UTC (D-1 17:00)",
-        description="Forecasts published by 17:00 UTC on the day before delivery (Post-auction / Evening Schedule).",
+        id="d1_0900",
+        label="Day-Ahead 09:00 UK (Pre-Auction Briefing)",
+        description="Forecasts published by 09:00 UK time on D-1. Represents early morning pre-auction trading briefing.",
         isDefault=False,
         group="Day-Ahead Auction Cutoffs",
     ),
     CutoffOption(
-        id="d1_0900",
-        label="Day-Ahead 09:00 UTC (D-1 09:00)",
-        description="Forecasts published by 09:00 UTC on the day before delivery (Pre-auction morning briefing).",
+        id="d1_1200",
+        label="Day-Ahead 12:00 UK (Late / sensitivity case, after gate closure)",
+        description="Forecasts published by 12:00 UK time on D-1. Late sensitivity case; includes midday forecasts published after EPEX GB auction closure.",
+        isDefault=False,
+        group="Day-Ahead Auction Cutoffs",
+    ),
+    CutoffOption(
+        id="d1_1700",
+        label="Day-Ahead 17:00 UK (Post-auction / Evening Schedule)",
+        description="Forecasts published by 17:00 UK time on D-1 (Post-auction / Evening Schedule).",
         isDefault=False,
         group="Day-Ahead Auction Cutoffs",
     ),
@@ -68,30 +81,41 @@ CUTOFF_OPTIONS: List[CutoffOption] = [
 
 def calculate_cutoff_datetime(
     delivery_dt: datetime,
-    cutoff_type: str = "d1_1200",
+    cutoff_type: str = "d1_0920",
     custom_cutoff_iso: Optional[str] = None,
 ) -> Optional[datetime]:
     """
     Computes the decision cutoff datetime for a specific delivery timestamp.
-    Prevents look-ahead bias by strictly defining the historical eligibility boundary.
+    Calculates D-1 cutoffs in the Europe/London timezone and converts to UTC,
+    ensuring year-round correctness (GMT in winter, BST in summer) and preventing look-ahead bias.
     """
     if custom_cutoff_iso:
         parsed = parse_utc_timestamp(custom_cutoff_iso)
         if parsed:
             return parsed
 
-    if cutoff_type == "d1_1200":
-        # Day before delivery at 12:00:00 UTC
-        prev_day = delivery_dt.date() - timedelta(days=1)
-        return datetime(prev_day.year, prev_day.month, prev_day.day, 12, 0, 0, tzinfo=timezone.utc)
+    delivery_london = delivery_dt.astimezone(LONDON_TZ)
+    prev_day = delivery_london.date() - timedelta(days=1)
 
-    elif cutoff_type == "d1_1700":
-        prev_day = delivery_dt.date() - timedelta(days=1)
-        return datetime(prev_day.year, prev_day.month, prev_day.day, 17, 0, 0, tzinfo=timezone.utc)
+    if cutoff_type == "d1_0920":
+        # 09:20 UK time on D-1 (EPEX GB Gate Closure)
+        dt_london = datetime(prev_day.year, prev_day.month, prev_day.day, 9, 20, 0, tzinfo=LONDON_TZ)
+        return dt_london.astimezone(timezone.utc)
 
     elif cutoff_type == "d1_0900":
-        prev_day = delivery_dt.date() - timedelta(days=1)
-        return datetime(prev_day.year, prev_day.month, prev_day.day, 9, 0, 0, tzinfo=timezone.utc)
+        # 09:00 UK time on D-1
+        dt_london = datetime(prev_day.year, prev_day.month, prev_day.day, 9, 0, 0, tzinfo=LONDON_TZ)
+        return dt_london.astimezone(timezone.utc)
+
+    elif cutoff_type == "d1_1200":
+        # 12:00 UK time on D-1 (Late / sensitivity benchmark)
+        dt_london = datetime(prev_day.year, prev_day.month, prev_day.day, 12, 0, 0, tzinfo=LONDON_TZ)
+        return dt_london.astimezone(timezone.utc)
+
+    elif cutoff_type == "d1_1700":
+        # 17:00 UK time on D-1
+        dt_london = datetime(prev_day.year, prev_day.month, prev_day.day, 17, 0, 0, tzinfo=LONDON_TZ)
+        return dt_london.astimezone(timezone.utc)
 
     elif cutoff_type == "lead_24h":
         return delivery_dt - timedelta(hours=24)
@@ -106,14 +130,14 @@ def calculate_cutoff_datetime(
         return delivery_dt
 
     else:
-        # Default fallback to D-1 12:00
-        prev_day = delivery_dt.date() - timedelta(days=1)
-        return datetime(prev_day.year, prev_day.month, prev_day.day, 12, 0, 0, tzinfo=timezone.utc)
+        # Default fallback to D-1 09:20 UK
+        dt_london = datetime(prev_day.year, prev_day.month, prev_day.day, 9, 20, 0, tzinfo=LONDON_TZ)
+        return dt_london.astimezone(timezone.utc)
 
 def select_forecasts_and_match(
     actual_records: List[FuelHHRecord],
     forecast_records: List[WindforRecord],
-    cutoff_type: str = "d1_1200",
+    cutoff_type: str = "d1_0920",
     custom_cutoff_iso: Optional[str] = None,
     alignment: str = "exact",
     start_date_iso: Optional[str] = None,
@@ -130,19 +154,15 @@ def select_forecasts_and_match(
         4. Select the eligible record with max(publishTime).
         5. Calculate error = forecast - actual (MW).
     """
-    # Build lookup for actual records by delivery startTime
     actual_by_time: Dict[str, FuelHHRecord] = {r.startTime: r for r in actual_records}
 
-    # Group forecast records by forecast startTime
     forecasts_by_target: Dict[str, List[WindforRecord]] = defaultdict(list)
     for f in forecast_records:
         forecasts_by_target[f.startTime].append(f)
 
-    # Date filtering
     filter_start = parse_utc_timestamp(start_date_iso) if start_date_iso else None
     filter_end = parse_utc_timestamp(end_date_iso) if end_date_iso else None
 
-    # Canonical Jan 2026 delivery intervals (1,488)
     expected_intervals = generate_expected_intervals()
 
     matched_records: List[MatchedRecord] = []
@@ -160,15 +180,11 @@ def select_forecasts_and_match(
         delivery_dt: datetime = interval["dt"]
         delivery_iso: str = interval["deliveryTime"]
 
-        # Date range filter check
         if filter_start and delivery_dt < filter_start:
             continue
         if filter_end and delivery_dt > filter_end:
             continue
 
-        # In exact alignment mode, WINDFOR only has hourly records (:00).
-        # If user selected exact alignment, we only evaluate on the hour intervals (:00).
-        # If user selected hourly_block, both :00 and :30 intervals are evaluated.
         is_half_hour = delivery_dt.minute >= 30
         if alignment == "exact" and is_half_hour:
             continue
@@ -177,9 +193,7 @@ def select_forecasts_and_match(
 
         actual_rec = actual_by_time.get(delivery_iso)
 
-        # Determine target forecast key for this delivery interval
         if alignment == "hourly_block" and is_half_hour:
-            # Map :30 back to :00 hour start
             hour_start_dt = delivery_dt.replace(minute=0, second=0)
             forecast_target_key = format_iso_utc(hour_start_dt)
         else:
@@ -189,19 +203,16 @@ def select_forecasts_and_match(
 
         cutoff_dt = calculate_cutoff_datetime(delivery_dt, cutoff_type, custom_cutoff_iso)
 
-        # Filter strictly by publishTime <= cutoff_dt
         eligible_forecasts = []
         for f in available_vintages:
             pub_dt = parse_utc_timestamp(f.publishTime)
             if pub_dt and cutoff_dt and pub_dt <= cutoff_dt:
                 eligible_forecasts.append(f)
 
-        # Select latest eligible forecast
         selected_forecast: Optional[WindforRecord] = None
         if eligible_forecasts:
             selected_forecast = max(eligible_forecasts, key=lambda f: f.publishTime)
 
-        # Record matching and error calculation
         actual_val = actual_rec.generation if actual_rec else None
         forecast_val = selected_forecast.generation if selected_forecast else None
         forecast_pub = selected_forecast.publishTime if selected_forecast else None
@@ -216,7 +227,6 @@ def select_forecasts_and_match(
         abs_error_val = None
 
         if actual_val is not None and forecast_val is not None:
-            # error = forecast - actual
             error_val = round(forecast_val - actual_val, 2)
             abs_error_val = round(abs(forecast_val - actual_val), 2)
             status = "MATCHED"
@@ -251,7 +261,7 @@ def get_delivery_vintages(
     delivery_iso: str,
     actual_records: List[FuelHHRecord],
     forecast_records: List[WindforRecord],
-    cutoff_type: str = "d1_1200",
+    cutoff_type: str = "d1_0920",
     custom_cutoff_iso: Optional[str] = None,
 ) -> VintageResponse:
     """Returns all forecast publications (vintages) for a specific delivery interval."""
@@ -263,14 +273,12 @@ def get_delivery_vintages(
     actual_rec = actual_by_time.get(delivery_iso)
     actual_val = actual_rec.generation if actual_rec else None
 
-    # Handle hourly key if needed
     hour_key = delivery_iso
     if delivery_dt.minute >= 30:
         hour_start_dt = delivery_dt.replace(minute=0, second=0)
         hour_key = format_iso_utc(hour_start_dt)
 
     matching_forecasts = [f for f in forecast_records if f.startTime in (delivery_iso, hour_key)]
-    # Deduplicate by publishTime
     unique_by_pub = {f.publishTime: f for f in matching_forecasts}
     vintages_sorted = sorted(unique_by_pub.values(), key=lambda f: f.publishTime)
 

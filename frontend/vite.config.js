@@ -7,6 +7,17 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-recharts': ['recharts'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

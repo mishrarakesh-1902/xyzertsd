@@ -14,7 +14,7 @@ def list_cutoffs():
 @router.get("/vintages", response_model=VintageResponse)
 def get_vintages(
     delivery_time: str = Query(..., description="Delivery timestamp to inspect, e.g. 2026-01-15T12:00:00Z"),
-    cutoff_type: str = Query("d1_1200", description="Cutoff rule id"),
+    cutoff_type: str = Query("d1_0920", description="Cutoff rule id"),
     custom_cutoff: Optional[str] = Query(None, description="Custom cutoff ISO datetime"),
 ):
     """
