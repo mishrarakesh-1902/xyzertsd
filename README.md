@@ -145,18 +145,10 @@ Every requirement in the assignment brief is listed below with the implementatio
 
 ## 🖼️ Screenshots and Interactive Demo
 
-> GitHub does not run JavaScript inside a README, so hover tooltips cannot work on this page. The animated demo below shows the live interaction, and the **Live App** link at the top lets you try the real chart.
-
-
-
-
 <p align="center">
   <img width="1550" height="784" alt="image" src="https://github.com/user-attachments/assets/85466209-e6df-45f2-af2b-98a96769a04e" />
 
 </p>
-
-
-
 
 <p align="center">
   <img width="1563" height="784" alt="image" src="https://github.com/user-attachments/assets/53b5f561-7efa-4b5f-b69a-57e64dfaf42b" />
