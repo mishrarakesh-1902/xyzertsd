@@ -16,12 +16,12 @@
 ![Frontend tests](https://img.shields.io/badge/vitest-3%20passed-brightgreen)
 ![Data](https://img.shields.io/badge/data-Elexon%20BMRS-orange)
 
-### 🔗 [Live App](PASTE_DEPLOYED_URL) &nbsp;•&nbsp; 🎥 [Video Walkthrough](PASTE_UNLISTED_YOUTUBE_URL) &nbsp;•&nbsp; 📘 [Methodology](docs/methodology.md) &nbsp;•&nbsp; 🏗️ [Architecture Notes](docs/architecture.md)
+### 🔗 [Live App](https://frontend-qwip.onrender.com) &nbsp;•&nbsp; 🎥 [Video Walkthrough](PASTE_UNLISTED_YOUTUBE_URL) &nbsp;•&nbsp; 📘 [Methodology](docs/methodology.md) &nbsp;•&nbsp; 🏗️ [Architecture Notes](docs/architecture.md)
 
 <br/>
 
-<!-- HERO: full dashboard screenshot. Save as docs/screenshots/dashboard-hero.png -->
-<img src="docs/screenshots/dashboard-hero.png" alt="WindScope dashboard overview" width="96%"/>
+<img width="817" height="868" alt="image" src="https://github.com/user-attachments/assets/a12a18ae-b7ee-4177-a988-111ea156b635" />
+
 
 </div>
 
@@ -147,77 +147,57 @@ Every requirement in the assignment brief is listed below with the implementatio
 
 > GitHub does not run JavaScript inside a README, so hover tooltips cannot work on this page. The animated demo below shows the live interaction, and the **Live App** link at the top lets you try the real chart.
 
-### Interactive chart in action
 
-<!-- Record 5 to 10 seconds hovering over the main chart. Save as docs/screenshots/chart-hover.gif -->
+
+
 <p align="center">
-  <img src="docs/screenshots/chart-hover.gif" alt="Hovering over the chart reveals actual, forecast and error values" width="96%"/>
+  <img width="1550" height="784" alt="image" src="https://github.com/user-attachments/assets/85466209-e6df-45f2-af2b-98a96769a04e" />
+
 </p>
 
-### Actual outturn vs selected forecast vs error
 
-<!-- Save as docs/screenshots/generation-chart.png -->
+
+
 <p align="center">
-  <img src="docs/screenshots/generation-chart.png" alt="Actual wind outturn, selected forecast and signed error for January 2026" width="96%"/>
+  <img width="1563" height="784" alt="image" src="https://github.com/user-attachments/assets/53b5f561-7efa-4b5f-b69a-57e64dfaf42b" />
+
 </p>
 
 *Teal: actual outturn (FUELHH). Purple: forecast selected at the cutoff (WINDFOR). Orange bars: error = forecast minus actual. Bars above zero mean the forecast was too high.*
 
-### KPI and risk-sizing cards
 
-<!-- Save as docs/screenshots/kpi-cards.png -->
 <p align="center">
-  <img src="docs/screenshots/kpi-cards.png" alt="KPI cards and risk sizing" width="96%"/>
+  <img width="1553" height="784" alt="image" src="https://github.com/user-attachments/assets/c2284c35-52cd-465c-8f20-703e390dcbbd" />
+
 </p>
 
-### Error by forecast lead time
 
-<!-- Save as docs/screenshots/horizon-chart.png -->
 <p align="center">
-  <img src="docs/screenshots/horizon-chart.png" alt="Forecast error by lead time bucket" width="96%"/>
+  <img width="1553" height="784" alt="image" src="https://github.com/user-attachments/assets/08e1e93b-b0ab-4ee9-a145-9555a77f474b" />
+
 </p>
 
-### Decision cutoff selector and filters
 
-<!-- Save as docs/screenshots/cutoff-selector.png -->
 <p align="center">
-  <img src="docs/screenshots/cutoff-selector.png" alt="Cutoff selector, alignment toggle and date filter" width="96%"/>
+  <img width="1555" height="784" alt="image" src="https://github.com/user-attachments/assets/2d002ac7-6740-4b38-8701-38cb41dc0233" />
+
 </p>
 
-### Daily error and bias
 
-<!-- Save as docs/screenshots/daily-error.png -->
 <p align="center">
-  <img src="docs/screenshots/daily-error.png" alt="Daily bias and MAE" width="96%"/>
+  <img width="1545" height="784" alt="image" src="https://github.com/user-attachments/assets/14378e62-cb0e-44b1-8418-c684d33af664" />
+
 </p>
 
-### Interval table
 
-<!-- Save as docs/screenshots/forecast-table.png -->
 <p align="center">
-  <img src="docs/screenshots/forecast-table.png" alt="Sortable and searchable interval table" width="96%"/>
+  <img width="1915" height="971" alt="image" src="https://github.com/user-attachments/assets/a6d8b923-9ee8-4333-be02-082df25f8e53" />
+
 </p>
 
-### Forecast vintage inspector
 
-<!-- Save as docs/screenshots/vintage-modal.png -->
-<p align="center">
-  <img src="docs/screenshots/vintage-modal.png" alt="All forecast versions published for one delivery interval" width="80%"/>
-</p>
 
-### Data quality and methodology panel
 
-<!-- Save as docs/screenshots/data-quality.png -->
-<p align="center">
-  <img src="docs/screenshots/data-quality.png" alt="Data quality audit and methodology" width="80%"/>
-</p>
-
-### Mobile view (optional)
-
-<!-- Save as docs/screenshots/mobile.png, or delete this block -->
-<p align="center">
-  <img src="docs/screenshots/mobile.png" alt="Mobile layout" width="30%"/>
-</p>
 
 ---
 
