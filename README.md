@@ -48,19 +48,20 @@
 4. [Key Findings: January 2026](#-key-findings-january-2026)
 5. [Domain Background](#-domain-background)
 6. [Methodology](#-methodology)
-7. [System Architecture](#-system-architecture)
-8. [Data Model and Data Lineage](#-data-model-and-data-lineage)
-9. [Architecture Decision Records](#-architecture-decision-records)
-10. [Tech Stack](#-tech-stack)
-11. [Repository Structure](#-repository-structure)
-12. [Getting Started](#-getting-started)
-13. [API Reference](#-api-reference)
-14. [Testing and Verification](#-testing-and-verification)
-15. [Deployment](#-deployment)
-16. [Reliability, Security and Performance](#-reliability-security-and-performance)
-17. [Assumptions, Limitations and Roadmap](#-assumptions-limitations-and-roadmap)
-18. [Engineering Practices](#-engineering-practices)
-19. [AI Tool Disclosure](#-ai-tool-disclosure)
+7. [Formula Reference](#-formula-reference)
+8. [System Architecture](#-system-architecture)
+9. [Data Model and Data Lineage](#-data-model-and-data-lineage)
+10. [Architecture Decision Records](#-architecture-decision-records)
+11. [Tech Stack](#-tech-stack)
+12. [Repository Structure](#-repository-structure)
+13. [Getting Started](#-getting-started)
+14. [API Reference](#-api-reference)
+15. [Testing and Verification](#-testing-and-verification)
+16. [Deployment](#-deployment)
+17. [Reliability, Security and Performance](#-reliability-security-and-performance)
+18. [Assumptions, Limitations and Roadmap](#-assumptions-limitations-and-roadmap)
+19. [Engineering Practices](#-engineering-practices)
+20. [AI Tool Disclosure](#-ai-tool-disclosure)
 
 ---
 
@@ -362,6 +363,7 @@ Shortfall buffer = P95 of |error| over under-forecast intervals only
 - **Positive error:** over-forecast. Wind was lower than predicted and thermal power was under-procured.
 - **Negative error:** under-forecast. Wind was higher than predicted and thermal power was over-procured.
 - Metrics use **only matched intervals**. Missing values are never converted to zero.
+- The complete, formal version of every formula is in the [Formula Reference](#-formula-reference).
 
 ### Resolution alignment
 
@@ -377,6 +379,118 @@ FUELHH is half-hourly and WINDFOR is hourly.
 - Drop records whose target time is outside the analysis window.
 - Deduplicate actuals by `startTime` and forecasts by `(startTime, publishTime)`.
 - Normalise all timestamps to timezone-aware UTC.
+
+---
+
+## 📐 Formula Reference
+
+Every formula used by the backend, and by the frontend where it calculates anything, in one place. Symbols: $F$ = forecast (MW), $A$ = actual (MW), $e$ = error, $n$ = number of matched intervals, $T$ = delivery time.
+
+### 1. Delivery grid and settlement periods
+
+$$N_{half} = 31 \text{ days} \times 48 = 1{,}488 \qquad N_{hour} = 31 \times 24 = 744$$
+
+$$\text{SP}(T) = 2 \cdot \text{hour}(T) + \mathbb{1}[\text{minute}(T) \ge 30] + 1 \qquad (\text{SP} \in \{1,\dots,48\})$$
+
+Example: 12:00 gives SP 25, and 23:30 gives SP 48.
+
+### 2. Decision cutoff $C(T)$
+
+Let $D$ be the UK local date of $T$.
+
+$$C_{d1}(T) = \text{UTC}\big((D - 1\text{ day})\ \text{at}\ hh{:}mm\ \text{Europe/London}\big), \quad hh{:}mm \in \{09{:}20,\ 09{:}00,\ 12{:}00,\ 17{:}00\}$$
+
+$$C_{lead\text{-}k}(T) = T - k\text{ hours}, \quad k \in \{12, 24, 48\} \qquad\qquad C_{latest}(T) = T$$
+
+### 3. Forecast selection
+
+Let $T'$ be the forecast target time: $T' = T$ in exact mode, and $T' = \lfloor T \rfloor_{hour}$ in hourly-block mode (a `:30` interval uses the forecast for the hour start).
+
+$$\mathcal{E}(T) = \{\, f \in \text{WINDFOR} \;:\; f.\text{startTime} = T',\ \ f.\text{publishTime} \le C(T) \,\}$$
+
+$$f^{*}(T) = \underset{f \in \mathcal{E}(T)}{\arg\max}\ f.\text{publishTime} \qquad \text{(no eligible } f \Rightarrow \text{MISSING\_FORECAST)}$$
+
+### 4. Lead time
+
+$$L(f, T) = \frac{T - f.\text{publishTime}}{3600\ \text{s}} \quad \text{(hours, rounded to 2 decimals)}$$
+
+### 5. Interval error
+
+$$e_T = F^{*}(T) - A(T) \qquad |e_T| = \big|F^{*}(T) - A(T)\big| \qquad \text{(rounded to 2 decimals)}$$
+
+- $e > 0$: over-forecast (wind lower than predicted, thermal under-procured)
+- $e < 0$: under-forecast (wind higher than predicted, thermal over-procured)
+- Interval status: `MATCHED` if both $F$ and $A$ exist, otherwise `MISSING_FORECAST`, `MISSING_ACTUAL` or `MISSING_BOTH`. Only `MATCHED` intervals enter the metrics.
+
+### 6. Accuracy metrics (over matched intervals)
+
+$$\text{MAE} = \frac{1}{n}\sum_{i=1}^{n} |e_i| \qquad \text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} e_i^{2}} \qquad \text{Bias} = \frac{1}{n}\sum_{i=1}^{n} e_i$$
+
+$$\overline{A} = \frac{1}{n}\sum_{i=1}^{n} A_i \qquad\qquad \text{nMAE} = \frac{\text{MAE}}{\overline{A}} \times 100\%$$
+
+### 7. Percentiles (linear interpolation, same as `numpy.percentile` default)
+
+For sorted values $x_0 \le x_1 \le \dots \le x_{m-1}$ and percentile $p$:
+
+$$r = \frac{p}{100}(m-1) \qquad w = r - \lfloor r \rfloor \qquad P_p = x_{\lfloor r \rfloor}\,(1-w) + x_{\lceil r \rceil}\,w$$
+
+Used for P50, P90 and P95 of $|e|$.
+
+### 8. Risk-sizing quantities
+
+$$\text{Shortfall buffer} = P_{95}\big(\{\,|e_i| : e_i < 0\,\}\big) \qquad \text{Over-forecast boundary} = P_{95}\big(\{\,e_i : e_i > 0\,\}\big)$$
+
+$$\text{Worst over-forecast} = \max_i e_i \ (\text{reported if} > 0) \qquad \text{Worst under-forecast} = \min_i e_i \ (\text{reported if} < 0)$$
+
+### 9. Direction counts
+
+$$\text{over} = \#\{e_i > 0.001\} \qquad \text{under} = \#\{e_i < -0.001\} \qquad \text{exact} = n - \text{over} - \text{under}$$
+
+### 10. Data quality percentages (over the evaluated intervals $N_{eval}$)
+
+$$\text{Actual completeness} = \Big(1 - \frac{N_{missing\ actual}}{N_{eval}}\Big) \times 100 \qquad \text{Forecast completeness} = \Big(1 - \frac{N_{missing\ forecast}}{N_{eval}}\Big) \times 100$$
+
+$$\text{Matched completeness} = \frac{N_{matched}}{N_{eval}} \times 100 \qquad \text{(each rounded to 1 decimal)}$$
+
+### 11. Lead-time horizon analysis
+
+Unlike sections 3 to 6, this uses **every** forecast version $f$ with a known actual, not only the selected one.
+
+$$e_f = F_f - A(T), \qquad L_f = \frac{T - f.\text{publishTime}}{3600}, \qquad \text{keep only } L_f \ge 0$$
+
+Each pair is placed in the bucket whose range contains $L_f$ (lower bound inclusive, upper bound exclusive): $[0,6)$, $[6,12)$, $[12,24)$, $[24,36)$, $[36,48)$ and $[48,\infty)$ hours.
+
+$$\text{MAE}_b = \frac{1}{n_b}\sum_{f \in b} |e_f| \qquad \text{RMSE}_b = \sqrt{\frac{1}{n_b}\sum_{f \in b} e_f^{2}} \qquad \text{Bias}_b = \frac{1}{n_b}\sum_{f \in b} e_f$$
+
+Here $n_b$ is the number of forecast-and-actual pairs in bucket $b$ (the "Samples" column in the findings table).
+
+### 12. Daily error chart (frontend)
+
+For each calendar day $d$ with $n_d$ matched intervals:
+
+$$\text{Bias}_d = \operatorname{round}\Big(\frac{1}{n_d}\sum e_i\Big) \qquad \text{MAE}_d = \operatorname{round}\Big(\frac{1}{n_d}\sum |e_i|\Big)$$
+
+### 13. Derived figures quoted in this README
+
+$$\text{Share over-forecast} = \frac{631}{744} \approx 84.8\%$$
+
+$$\text{Understatement from a late cutoff} = \frac{\text{MAE}_{09:20} - \text{MAE}_{12:00}}{\text{MAE}_{09:20}} = \frac{2127.48 - 2002.91}{2127.48} \approx 5.9\%$$
+
+Time-alignment check (Pearson correlation between actuals shifted by $k$ hours and forecasts):
+
+$$r_k = \frac{\sum (A_i - \bar A)(F_{i-k} - \bar F)}{\sqrt{\sum (A_i - \bar A)^2}\ \sqrt{\sum (F_{i-k} - \bar F)^2}}$$
+
+The correlation is highest at $k = 0$ ($r = 0.954$), confirming there is no timestamp offset.
+
+### 14. Worked numeric check
+
+Four matched intervals with $(A, F)$ = (100, 110), (200, 190), (150, 170), (150, 150) give $e = [+10, -10, +20, 0]$:
+
+$$\text{MAE} = \frac{10+10+20+0}{4} = 10 \qquad \text{RMSE} = \sqrt{\frac{100+100+400+0}{4}} = \sqrt{150} \approx 12.25 \qquad \text{Bias} = \frac{10-10+20+0}{4} = 5$$
+
+$$\overline{A} = 150 \qquad \text{nMAE} = \frac{10}{150} \times 100 \approx 6.67\% \qquad P_{50}(|e|) = P_{50}([0,10,10,20]) = 10$$
+
+This exact dataset is asserted in `test_metrics_known_values`.
 
 ---
 
