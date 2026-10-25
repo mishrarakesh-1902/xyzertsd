@@ -16,7 +16,7 @@
 ![Frontend tests](https://img.shields.io/badge/vitest-3%20passed-brightgreen)
 ![Data](https://img.shields.io/badge/data-Elexon%20BMRS-orange)
 
-### 🔗 [Live App](https://frontend-qwip.onrender.com) &nbsp;•&nbsp; 🎥 [Video Walkthrough](PASTE_UNLISTED_YOUTUBE_URL) &nbsp;•&nbsp; 📘 [Methodology](docs/methodology.md) &nbsp;•&nbsp; 🏗️ [Architecture Notes](docs/architecture.md)
+### 🔗 [Live App](https://frontend-qwip.onrender.com) &nbsp;•&nbsp; 🎥 [Video Walkthrough](https://youtu.be/18QLa1RQG84) &nbsp;•&nbsp; 📘 [Methodology](docs/methodology.md) &nbsp;•&nbsp; 🏗️ [Architecture Notes](docs/architecture.md)
 
 <br/>
 
