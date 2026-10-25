@@ -2,110 +2,199 @@
 
 # 🌬️ WindScope
 
-### UK Wind Forecast Intelligence for Day-Ahead Power Buyers
+### Day-Ahead Wind Forecast Intelligence for UK Power Buyers
 
-**See exactly which wind forecast was available when the buying decision had to be made, and measure how wrong it was.**
+**Know exactly which wind forecast you had when you had to buy, and exactly how wrong it was.**
 
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-Pydantic%20v2-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Backend tests](https://img.shields.io/badge/pytest-23%20passed-brightgreen)
 ![Frontend tests](https://img.shields.io/badge/vitest-3%20passed-brightgreen)
+![Data](https://img.shields.io/badge/data-Elexon%20BMRS-orange)
 
-### 🔗 [Live App](PASTE_DEPLOYED_URL) &nbsp;|&nbsp; 🎥 [Video Demo](PASTE_UNLISTED_YOUTUBE_URL)
-
-<!-- Replace the two links above. Keep the text, only change the URL inside ( ). -->
+### 🔗 [Live App](PASTE_DEPLOYED_URL) &nbsp;•&nbsp; 🎥 [Video Walkthrough](PASTE_UNLISTED_YOUTUBE_URL) &nbsp;•&nbsp; 📘 [Methodology](docs/methodology.md) &nbsp;•&nbsp; 🏗️ [Architecture Notes](docs/architecture.md)
 
 <br/>
 
-<!-- HERO SCREENSHOT: full dashboard, dark theme, default cutoff selected -->
-<img src="docs/screenshots/dashboard-hero.png" alt="WindScope dashboard" width="95%"/>
+<!-- HERO: full dashboard screenshot. Save as docs/screenshots/dashboard-hero.png -->
+<img src="docs/screenshots/dashboard-hero.png" alt="WindScope dashboard overview" width="96%"/>
 
 </div>
 
 ---
 
+## ⚡ At a Glance
+
+- **1,488** half-hourly delivery intervals analysed (31 days of January 2026)
+- **18,080** forecast versions (vintages) ingested from Elexon WINDFOR, including forecasts published in late December
+- **8** selectable decision cutoffs, with the real **09:20 UK gate closure** as the default
+- **0** look-ahead leaks: a forecast published after the cutoff can never be selected
+- **9** error metrics: MAE, RMSE, bias, P50, P90, P95, normalised MAE, worst over-forecast, worst under-forecast
+- **6** lead-time buckets showing how accuracy decays from 0 to 6 hours up to 48 hours and beyond
+- **26** automated tests (23 backend, 3 frontend) plus a production build check
+- **1** command to run everything: `docker-compose up --build`
+
+---
+
 ## 📌 Table of Contents
 
-1. [The Problem](#-the-problem)
-2. [What WindScope Does](#-what-windscope-does)
-3. [Screenshots and Live Demo](#-screenshots-and-live-demo)
-4. [Key Findings for January 2026](#-key-findings-for-january-2026)
-5. [How the Analysis Works](#-how-the-analysis-works)
-6. [Architecture](#-architecture)
-7. [Tech Stack](#-tech-stack)
-8. [Repository Structure](#-repository-structure)
-9. [Getting Started](#-getting-started)
-10. [API Reference](#-api-reference)
-11. [Testing](#-testing)
-12. [Deployment](#-deployment)
-13. [Assumptions and Limitations](#-assumptions-and-limitations)
-14. [AI Tool Disclosure](#-ai-tool-disclosure)
+1. [Executive Summary](#-executive-summary)
+2. [Assignment Requirements Traceability Matrix](#-assignment-requirements-traceability-matrix)
+3. [Screenshots and Interactive Demo](#-screenshots-and-interactive-demo)
+4. [Key Findings: January 2026](#-key-findings-january-2026)
+5. [Domain Background](#-domain-background)
+6. [Methodology](#-methodology)
+7. [System Architecture](#-system-architecture)
+8. [Data Model and Data Lineage](#-data-model-and-data-lineage)
+9. [Architecture Decision Records](#-architecture-decision-records)
+10. [Tech Stack](#-tech-stack)
+11. [Repository Structure](#-repository-structure)
+12. [Getting Started](#-getting-started)
+13. [API Reference](#-api-reference)
+14. [Testing and Verification](#-testing-and-verification)
+15. [Deployment](#-deployment)
+16. [Reliability, Security and Performance](#-reliability-security-and-performance)
+17. [Assumptions, Limitations and Roadmap](#-assumptions-limitations-and-roadmap)
+18. [Engineering Practices](#-engineering-practices)
+19. [AI Tool Disclosure](#-ai-tool-disclosure)
 
 ---
 
-## 🎯 The Problem
+## 🧭 Executive Summary
 
-A UK energy utility has to buy electricity on the **day-ahead wholesale market**. Orders are locked one day before delivery, so the buyer must decide **before** they know how much wind will actually blow.
+**The client** is a UK energy utility whose trading team buys power on the **day-ahead wholesale market**. Orders are locked on the day before delivery. Wind output is weather dependent, so the team must rely on wind forecasts to decide how much extra power (for example from thermal plants) it needs to buy.
 
-Wind output is weather dependent. Whatever the forecast fails to cover must be bought from other sources such as thermal plants. That raises two questions:
+**The two questions this product answers**
 
-1. **Which wind forecast was actually available at the moment of the decision?**
-2. **How accurate were such forecasts, in numbers, so the error can be priced into the purchase?**
+1. **Visibility:** *What was the latest wind forecast available at the moment I had to decide?*
+2. **Accuracy:** *How accurate were such forecasts, in numbers, so I can build the error into my buying decision?*
 
-WindScope answers both using national level data from Elexon BMRS only: **FUELHH** for actual generation and **WINDFOR** for forecasts.
+**How WindScope answers them**
 
----
+- It rebuilds the decision moment for every delivery half hour. Only forecasts published **on or before the cutoff** are eligible, and the **latest eligible** one is selected.
+- It compares each selected forecast with the metered outturn and reports bias, error size, error tails and a suggested shortfall buffer.
+- It shows how forecast quality changes with forecast age, so the team can see what waiting for a newer forecast would have bought them.
+- It makes every number auditable: a data quality panel, a methodology panel, and a per-interval vintage inspector.
 
-## ✨ What WindScope Does
-
-- **No look-ahead bias.** For every delivery half hour, the app picks the latest forecast published on or before the decision cutoff. Forecasts published later are excluded.
-- **Realistic decision time.** The default cutoff is the **GB day-ahead gate closure at 09:20 UK time** (EPEX GB), calculated in the `Europe/London` timezone. Other cutoffs are available for sensitivity checks.
-- **Accuracy in numbers.** MAE, RMSE, bias, error percentiles (P50, P90, P95), normalised MAE, and the worst single over and under forecast.
-- **Risk sizing.** A suggested shortfall buffer based on the P95 under-forecast, shown as decision support rather than advice.
-- **Error by lead time.** How accuracy changes as the forecast gets older (0 to 6 hours up to 48 hours and beyond), using every forecast version and not only the selected one.
-- **Forecast vintage inspector.** Click any delivery interval to see every forecast published for it, when it was published, and whether it was eligible at the cutoff.
-- **Data quality panel.** Expected vs retrieved vs matched intervals, missing data, and the exact formulas used.
-- **Flexible alignment.** Compare on the hour only (744 intervals) or map hourly forecasts onto both half hours (1,488 intervals).
-- **Searchable, sortable table** of every interval with status (`MATCHED`, `MISSING_FORECAST`, `MISSING_ACTUAL`) and pagination.
+**The headline result for January 2026:** forecasts available at gate closure over-estimated wind by about **+1.85 GW on average** (MAE 2,127 MW, 18.4% of average output). Trusting them blindly would have left the buyer short of backup power in most hours.
 
 ---
 
-## 🖼️ Screenshots and Live Demo
+## ✅ Assignment Requirements Traceability Matrix
 
-> GitHub cannot run JavaScript inside a README, so hover interactions cannot work here. The animated demo below shows the live behaviour instead, and the **Live App** link at the top lets reviewers try the real thing.
+Every requirement in the assignment brief is listed below with the implementation and the evidence that proves it.
+
+### A. Functional and data requirements
+
+| # | Requirement from the brief | Status | How it is implemented | Evidence |
+|---|---|---|---|---|
+| A1 | Web app for a UK energy utility buying on the day-ahead market | ✅ Done | Trading dashboard with cutoff selector, KPIs, charts, table | [`frontend/src/App.jsx`](frontend/src/App.jsx) |
+| A2 | **Need 1:** clearly understand the latest forecasts available when decisions are made | ✅ Done | Latest-eligible-forecast selection per delivery interval, default cutoff at EPEX GB gate closure (09:20 UK), chart of actual vs selected forecast, vintage inspector | [`forecast_selection.py`](backend/app/services/forecast_selection.py), [`GenerationChart.jsx`](frontend/src/components/GenerationChart.jsx), [`VintageModal.jsx`](frontend/src/components/VintageModal.jsx) |
+| A3 | **Need 2:** evaluate forecast accuracy quantitatively | ✅ Done | MAE, RMSE, bias, P50/P90/P95, nMAE, worst cases, shortfall buffer, error by lead time | [`metrics.py`](backend/app/services/metrics.py), [`test_metrics.py`](backend/tests/test_metrics.py) |
+| A4 | Actuals from Elexon **FUELHH** | ✅ Done | Elexon client fetches the FUELHH stream | [`elexon.py`](backend/app/services/elexon.py) |
+| A5 | Use only `fuelType == "WIND"` | ✅ Done | Cleaner filters to WIND (29,760 raw rows over 20 fuel types become 1,488 wind rows) | [`data_cleaning.py`](backend/app/services/data_cleaning.py), `test_clean_fuelhh_filters_wind_and_dates` |
+| A6 | Use `startTime` (30 min resolution) and `generation` from actuals | ✅ Done | Delivery grid of 1,488 half hours, matched by `startTime` | `test_expected_intervals_january_2026` |
+| A7 | Forecasts from Elexon **WINDFOR** | ✅ Done | Elexon client fetches the WINDFOR stream | [`elexon.py`](backend/app/services/elexon.py) |
+| A8 | Use forecast `startTime`, `publishTime`, `generation` | ✅ Done | All three fields are kept and used for selection, lead time and error | [`schemas.py`](backend/app/models/schemas.py) |
+| A9 | Only national-level Elexon wind data, no other data | ✅ Done | No external or additional data source is used | [`elexon.py`](backend/app/services/elexon.py) |
+| A10 | Purchase decisions in **January 2026** only | ✅ Done | Delivery window fixed to 1 to 31 Jan 2026; forecasts published from 30 Dec 2025 are kept so early-January deliveries have eligible forecasts | `test_preserves_december_published_forecast`, `test_clean_windfor_filters_and_preserves_december_publishes` |
+| A11 | Decisions happen one day before delivery | ✅ Done | D-1 cutoffs computed in the `Europe/London` timezone | `test_cutoff_calculation_d1_0920`, `test_d1_0920_eligibility_boundary` |
+| A12 | Forecast made *before* the decision must be the one evaluated (no hindsight) | ✅ Done | `publishTime <= cutoff` filter, then latest wins | `test_forecast_selection_no_eligible_forecast` |
+
+### B. Technical requirements
+
+| # | Requirement | Status | Implementation | Evidence |
+|---|---|---|---|---|
+| B1 | React front end | ✅ Done | React 18 + Vite + Tailwind + Recharts | [`frontend/`](frontend) |
+| B2 | Python back end | ✅ Done | FastAPI + Pydantic v2 | [`backend/`](backend) |
+| B3 | Use Docker | ✅ Done | Dockerfile for each service plus `docker-compose.yml` with healthcheck | [`docker-compose.yml`](docker-compose.yml) |
+| B4 | Deploy on Vercel or Heroku | ✅ Done | See the live link at the top of this README | [Deployment](#-deployment) |
+| B5 | Mention AI tools in the README | ✅ Done | Disclosure section at the end | [AI Tool Disclosure](#-ai-tool-disclosure) |
+
+### C. Deliverables
+
+| # | Deliverable | Status | Where |
+|---|---|---|---|
+| C1 | Unlisted YouTube video, max 10 minutes | ✅ Done | [Video Walkthrough](PASTE_UNLISTED_YOUTUBE_URL) |
+| C2 | Video part 1: customer pitch (max 5 min overview) | ✅ Done | First half of the video; talking points in [`docs/video_demo_script.md`](docs/video_demo_script.md) |
+| C3 | Video part 2: tech lead walkthrough of architecture, design, analysis, code base and practices (max 5 min overview) | ✅ Done | Second half of the video; see [Architecture](#-system-architecture) and [Engineering Practices](#-engineering-practices) |
+| C4 | Public GitHub repo with anonymous name | ✅ Done | This repository |
+| C5 | README: files and directories | ✅ Done | [Repository Structure](#-repository-structure) |
+| C6 | README: how to start the application | ✅ Done | [Getting Started](#-getting-started) |
+| C7 | README: link to the deployed app | ✅ Done | Top of this README and [Deployment](#-deployment) |
+| C8 | Submission form | ✅ Done | Submitted with all links verified in incognito mode |
+
+### D. Beyond the brief (added value)
+
+| # | Extra capability | Why it matters to the client |
+|---|---|---|
+| D1 | Error by forecast lead time (6 buckets) | Shows what waiting for a newer forecast would have gained |
+| D2 | P90 and P95 error and a suggested shortfall buffer | Turns an average error into a number a buyer can size a hedge with |
+| D3 | Eight selectable cutoffs including a "late" sensitivity case | Proves the conclusions are robust, and shows how a late cutoff flatters accuracy |
+| D4 | Forecast vintage inspector | Lets a trader audit any single decision |
+| D5 | Data quality and methodology panel | Every number is traceable to a formula and a record count |
+| D6 | Two alignment modes (hourly vs half-hourly) | Handles the 60 min vs 30 min resolution mismatch openly |
+| D7 | Cached data plus a refresh endpoint | Fast, reproducible, and resilient to upstream downtime |
+
+---
+
+## 🖼️ Screenshots and Interactive Demo
+
+> GitHub does not run JavaScript inside a README, so hover tooltips cannot work on this page. The animated demo below shows the live interaction, and the **Live App** link at the top lets you try the real chart.
 
 ### Interactive chart in action
 
-<!-- GIF: record yourself hovering and scrolling over the main chart for 5 to 10 seconds.
-     Save as docs/screenshots/chart-hover.gif (keep it under 10 MB). -->
+<!-- Record 5 to 10 seconds hovering over the main chart. Save as docs/screenshots/chart-hover.gif -->
 <p align="center">
-  <img src="docs/screenshots/chart-hover.gif" alt="Hovering over the generation chart shows live values" width="95%"/>
+  <img src="docs/screenshots/chart-hover.gif" alt="Hovering over the chart reveals actual, forecast and error values" width="96%"/>
 </p>
 
-### Actual vs forecast vs error
+### Actual outturn vs selected forecast vs error
 
-<!-- Your attached chart screenshot goes here. Save it as docs/screenshots/generation-chart.png -->
+<!-- Save as docs/screenshots/generation-chart.png -->
 <p align="center">
-  <img src="docs/screenshots/generation-chart.png" alt="Actual wind outturn compared with the selected forecast and the signed error" width="95%"/>
+  <img src="docs/screenshots/generation-chart.png" alt="Actual wind outturn, selected forecast and signed error for January 2026" width="96%"/>
 </p>
 
-*Teal line: actual outturn (FUELHH). Purple line: selected forecast (WINDFOR). Orange bars: error (forecast minus actual). Above zero means the forecast was too high.*
+*Teal: actual outturn (FUELHH). Purple: forecast selected at the cutoff (WINDFOR). Orange bars: error = forecast minus actual. Bars above zero mean the forecast was too high.*
 
-### KPI and risk sizing cards
+### KPI and risk-sizing cards
 
 <!-- Save as docs/screenshots/kpi-cards.png -->
 <p align="center">
-  <img src="docs/screenshots/kpi-cards.png" alt="KPI cards for MAE, RMSE, bias and percentile errors" width="95%"/>
+  <img src="docs/screenshots/kpi-cards.png" alt="KPI cards and risk sizing" width="96%"/>
 </p>
 
 ### Error by forecast lead time
 
 <!-- Save as docs/screenshots/horizon-chart.png -->
 <p align="center">
-  <img src="docs/screenshots/horizon-chart.png" alt="Forecast error grouped by lead time" width="95%"/>
+  <img src="docs/screenshots/horizon-chart.png" alt="Forecast error by lead time bucket" width="96%"/>
+</p>
+
+### Decision cutoff selector and filters
+
+<!-- Save as docs/screenshots/cutoff-selector.png -->
+<p align="center">
+  <img src="docs/screenshots/cutoff-selector.png" alt="Cutoff selector, alignment toggle and date filter" width="96%"/>
+</p>
+
+### Daily error and bias
+
+<!-- Save as docs/screenshots/daily-error.png -->
+<p align="center">
+  <img src="docs/screenshots/daily-error.png" alt="Daily bias and MAE" width="96%"/>
+</p>
+
+### Interval table
+
+<!-- Save as docs/screenshots/forecast-table.png -->
+<p align="center">
+  <img src="docs/screenshots/forecast-table.png" alt="Sortable and searchable interval table" width="96%"/>
 </p>
 
 ### Forecast vintage inspector
@@ -115,152 +204,372 @@ WindScope answers both using national level data from Elexon BMRS only: **FUELHH
   <img src="docs/screenshots/vintage-modal.png" alt="All forecast versions published for one delivery interval" width="80%"/>
 </p>
 
-### Data quality and methodology
+### Data quality and methodology panel
 
 <!-- Save as docs/screenshots/data-quality.png -->
 <p align="center">
-  <img src="docs/screenshots/data-quality.png" alt="Data quality and methodology panel" width="80%"/>
+  <img src="docs/screenshots/data-quality.png" alt="Data quality audit and methodology" width="80%"/>
 </p>
 
-### Cutoff selector and table
+### Mobile view (optional)
 
-<!-- Save as docs/screenshots/cutoff-and-table.png -->
+<!-- Save as docs/screenshots/mobile.png, or delete this block -->
 <p align="center">
-  <img src="docs/screenshots/cutoff-and-table.png" alt="Cutoff selector and interval table" width="95%"/>
+  <img src="docs/screenshots/mobile.png" alt="Mobile layout" width="30%"/>
 </p>
 
 ---
 
-## 📊 Key Findings for January 2026
+## 📊 Key Findings: January 2026
 
-Results for the default cutoff (day-ahead gate closure, 09:20 UK time). Error is defined as **forecast minus actual**.
+Default cutoff: **day-ahead gate closure, 09:20 UK time**. Error is **forecast minus actual**.
 
-**Hourly delivery periods (744 intervals)**
-- MAE: **2,127 MW**, which is **18.4%** of the average actual output of 11,581 MW
-- RMSE: **2,606 MW**
-- Bias: **+1,852 MW** (forecast too high)
-- P50 / P90 / P95 absolute error: **1,759 / 4,306 / 5,351 MW**
-- Over-forecast in **631** intervals, under-forecast in **113**
-- Suggested shortfall buffer (P95 of under-forecast size): **2,374 MW**
-- Worst over-forecast: **+6,894 MW** on 12 Jan 01:00 UTC
-- Worst under-forecast: **-3,389 MW** on 8 Jan 19:00 UTC
+### Headline accuracy
 
-**Half-hourly mapping (1,488 intervals)**
-- MAE **2,145 MW**, RMSE **2,616 MW**, bias **+1,852 MW**
+| Metric | Hourly (744 intervals) | Half-hourly mapping (1,488 intervals) |
+|---|---|---|
+| MAE | **2,127.48 MW** | 2,145.17 MW |
+| RMSE | **2,606.07 MW** | 2,615.81 MW |
+| Bias | **+1,851.53 MW** | +1,851.90 MW |
+| Normalised MAE | **18.37%** of mean actual 11,581 MW | 18.52% |
+| P50 absolute error | 1,758.50 MW | 1,795.50 MW |
+| P90 absolute error | 4,306.40 MW | 4,274.90 MW |
+| P95 absolute error | 5,350.90 MW | 5,340.95 MW |
+| Over-forecast / under-forecast intervals | 631 / 113 | 1,263 / 225 |
+| P95 under-forecast size (suggested shortfall buffer) | 2,374.00 MW | 2,333.40 MW |
+| Worst over-forecast | +6,894 MW (12 Jan 01:00 UTC) | +6,894 MW |
+| Worst under-forecast | -3,389 MW (8 Jan 19:00 UTC) | -3,835 MW (8 Jan 18:30 UTC) |
 
-**What this means for a buyer**
+### What this means for the buyer
 
-January 2026 forecasts were persistently **too optimistic about wind** by roughly 1.85 GW on average. A buyer who trusted them at face value would have under-bought backup power in most hours. Positive bias means wind was over-estimated and the missing energy had to be covered elsewhere.
+- **The bias is the story.** Forecasts were too high in 631 of 744 hours. Positive error means wind was over-estimated, so backup power was under-bought. Correcting for bias would be the single most valuable adjustment.
+- **Tails matter more than the average.** The typical error is about 1.8 GW, but one hour in twenty is off by more than 5.3 GW.
+- **Error grows with forecast age**, as the table below shows.
 
-**Error grows with forecast age**
+### Error by lead time (all forecast versions, hourly alignment)
 
-- 0 to 6 h ahead: MAE **1,768 MW**
-- 6 to 12 h ahead: **1,834 MW**
-- 12 to 24 h ahead: **1,991 MW**
-- 24 to 36 h ahead: **2,123 MW**
-- 36 to 48 h ahead: **2,337 MW**
-- 48 h and beyond: **2,372 MW**
+| Lead time | MAE (MW) | RMSE (MW) | Bias (MW) | Samples |
+|---|---|---|---|---|
+| 0 to 6 h | 1,767.72 | 2,249.21 | +1,548.25 | 1,488 |
+| 6 to 12 h | 1,833.73 | 2,304.38 | +1,616.10 | 1,488 |
+| 12 to 24 h | 1,990.88 | 2,474.17 | +1,811.20 | 2,976 |
+| 24 to 36 h | 2,122.56 | 2,586.87 | +1,838.48 | 2,976 |
+| 36 to 48 h | 2,337.01 | 2,866.21 | +2,004.50 | 2,945 |
+| 48 h and more | 2,371.92 | 2,977.90 | +1,479.56 | 2,510 |
 
-*Numbers come from the cached January 2026 data and will change only if the data is refreshed.*
+### Sensitivity: how the choice of cutoff changes the conclusion
+
+| Cutoff | MAE (MW) | Bias (MW) | Matched intervals |
+|---|---|---|---|
+| **Day-ahead 09:20 UK (default, real gate closure)** | **2,127.48** | **+1,851.53** | 744 |
+| Day-ahead 09:00 UK | 2,127.48 | +1,851.53 | 744 |
+| Day-ahead 12:00 UK (late) | 2,002.91 | +1,805.86 | 744 |
+| Day-ahead 17:00 UK | 1,968.25 | +1,816.53 | 744 |
+| 48 h before delivery | 2,379.89 | +1,879.26 | 589 (155 have no eligible forecast) |
+| 24 h before delivery | 2,050.24 | +1,854.22 | 744 |
+| 12 h before delivery | 1,897.54 | +1,703.99 | 744 |
+| Latest before delivery | 1,794.22 | +1,592.49 | 744 |
+
+**Reading the table**
+
+- Using a **12:00 cutoff instead of the real 09:20 gate closure would understate the error by about 5.9%** (2,003 vs 2,127 MW), because it lets the analysis use forecasts a trader did not have. This is why the default is the realistic cutoff.
+- 09:00 and 09:20 give identical results because no WINDFOR forecast was published between those two times in January 2026, so both cutoffs select the same forecasts.
+- The positive bias (+1.6 to +1.9 GW) is present under **every** cutoff, so the finding is robust and not an artefact of the chosen time.
 
 ---
 
-## 🧠 How the Analysis Works
+## 🌍 Domain Background
 
-### 1. Forecast selection rule
+### The day-ahead timeline
 
-For each delivery time `T`:
-
-1. Collect every forecast whose `startTime` is `T`.
-2. Keep only those with `publishTime <= cutoff(T)`.
-3. Select the one with the latest `publishTime`.
-4. If none qualify, mark the interval `MISSING_FORECAST`. It is never filled with zero.
-
-### 2. Decision cutoffs
-
-- **`d1_0920` (default):** 09:20 UK time on the day before delivery. This matches the EPEX GB day-ahead gate closure.
-- **`d1_0900`:** 09:00 UK time on D-1.
-- **`d1_1200`:** 12:00 UK time on D-1. A late sensitivity case, because it includes forecasts published after the real gate closure.
-- **`d1_1700`:** 17:00 UK time on D-1.
-- **`lead_12h`, `lead_24h`, `lead_48h`:** a fixed lead time before each delivery interval.
-- **`latest`:** the newest forecast published before delivery starts.
-
-D-1 cutoffs are computed in `Europe/London` and converted to UTC, so the logic stays correct in summer time as well.
-
-### 3. Metrics
-
-```
-error = forecast - actual            (MW)
-MAE   = mean(|error|)
-RMSE  = sqrt(mean(error^2))
-Bias  = mean(error)
-nMAE  = MAE / mean(actual) * 100     (%)
-P50, P90, P95 = percentiles of |error|
-Shortfall buffer = P95 of the size of under-forecast errors
+```mermaid
+flowchart LR
+    A["Day D-1, morning<br/>Wind forecasts keep<br/>being published"] --> B["Day D-1, 09:20 UK<br/>EPEX GB gate closure<br/>orders locked"]
+    B --> C["Day D-1, 09:50 UK<br/>N2EX gate closure"]
+    C --> D["Day D<br/>Delivery happens<br/>wind output is metered"]
+    D --> E["After delivery<br/>Compare forecast vs actual<br/>compute error"]
+    style B fill:#14532d,stroke:#22c55e,color:#fff
+    style E fill:#1e3a8a,stroke:#60a5fa,color:#fff
 ```
 
-- Positive error means over-forecast (wind was lower than predicted).
-- Negative error means under-forecast (wind was higher than predicted).
+Forecasts published **after** the green box are useless for the purchase decision, even though they are more accurate. A fair accuracy evaluation must ignore them. That is the core idea of this project.
 
-### 4. Data cleaning
+### Glossary
 
-- Only `fuelType == "WIND"` is kept from FUELHH.
-- Records with null, NaN or infinite values are rejected.
-- Duplicate actuals on the same `startTime` keep the latest record. Duplicate forecasts on the same `(startTime, publishTime)` are removed.
-- Missing values are flagged, not replaced with zero.
-- All timestamps are timezone aware and normalised to UTC.
+- **Outturn / actual generation:** metered wind output, from FUELHH.
+- **Forecast vintage:** one specific version of a forecast for a delivery time. The same delivery time can have many vintages published at different times.
+- **Publish time:** when a forecast version was created.
+- **Cutoff:** the latest publish time allowed for a forecast to count as "known at decision time".
+- **Lead time:** delivery time minus publish time.
+- **Settlement period:** UK half-hour slot numbered 1 to 48 per day.
+- **Bias:** average signed error. Positive means over-forecast.
+- **Gate closure:** the deadline after which an auction accepts no more orders.
 
-### 5. Resolution difference
+---
 
-FUELHH is half-hourly and WINDFOR is hourly. The app offers two alignments:
+## 🧠 Methodology
+
+### Forecast selection
+
+```mermaid
+flowchart TD
+    S["For each delivery interval T"] --> G["Collect all forecast vintages<br/>for target time T"]
+    G --> C["Compute cutoff for T<br/>for example D-1 09:20 UK"]
+    C --> F{"publishTime <= cutoff?"}
+    F -- "No" --> X["Exclude vintage<br/>no look-ahead"]
+    F -- "Yes" --> E["Eligible set"]
+    E --> Q{"Any eligible?"}
+    Q -- "No" --> M["Status = MISSING_FORECAST<br/>never filled with zero"]
+    Q -- "Yes" --> P["Pick latest publishTime"]
+    P --> A{"Actual available?"}
+    A -- "No" --> MA["Status = MISSING_ACTUAL"]
+    A -- "Yes" --> R["error = forecast - actual<br/>Status = MATCHED"]
+```
+
+### Worked example (real data)
+
+Delivery time: **15 Jan 2026, 12:00 UTC**, cutoff **14 Jan 2026, 09:20 UTC**.
+
+- 24 forecast versions exist for this delivery time.
+- 11 were published on or before the cutoff and are eligible.
+- The latest eligible one was published **14 Jan 07:30 UTC** (lead time 28.5 h) and predicted **11,049 MW**.
+- The next version, published 14 Jan 09:30 UTC (11,178 MW), came **after** the cutoff and is excluded.
+- Actual outturn was **9,742 MW**, so the error is **+1,307 MW** (over-forecast).
+
+### Decision cutoffs
+
+- `d1_0920` **(default)**: 09:20 UK time on D-1, the EPEX GB day-ahead gate closure
+- `d1_0900`: 09:00 UK time on D-1
+- `d1_1200`: 12:00 UK time on D-1, a late sensitivity case after the real gate closure
+- `d1_1700`: 17:00 UK time on D-1
+- `lead_12h`, `lead_24h`, `lead_48h`: fixed lead time before each delivery interval
+- `latest`: newest forecast published before delivery starts
+
+D-1 cutoffs are built in the `Europe/London` timezone and converted to UTC, so they stay correct in summer time too.
+
+### Metrics
+
+```
+error  = forecast - actual                 (MW)
+MAE    = mean(|error|)
+RMSE   = sqrt(mean(error^2))
+Bias   = mean(error)
+nMAE   = MAE / mean(actual) x 100          (%)
+P50, P90, P95 = percentiles of |error|     (linear interpolation)
+Shortfall buffer = P95 of |error| over under-forecast intervals only
+```
+
+- **Positive error:** over-forecast. Wind was lower than predicted and thermal power was under-procured.
+- **Negative error:** under-forecast. Wind was higher than predicted and thermal power was over-procured.
+- Metrics use **only matched intervals**. Missing values are never converted to zero.
+
+### Resolution alignment
+
+FUELHH is half-hourly and WINDFOR is hourly.
 
 - **Exact:** evaluate only the hours where both datasets have a value (744 intervals).
-- **Hourly block:** apply each hourly forecast to both half hours in that hour (1,488 intervals).
+- **Hourly block:** apply each hourly forecast to both half-hours of that hour (1,488 intervals).
+
+### Data cleaning rules
+
+- Keep only `fuelType == "WIND"`.
+- Reject null, NaN and infinite generation values.
+- Drop records whose target time is outside the analysis window.
+- Deduplicate actuals by `startTime` and forecasts by `(startTime, publishTime)`.
+- Normalise all timestamps to timezone-aware UTC.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
 
-```
-          Elexon BMRS API (FUELHH, WINDFOR)
-                        |
-                        v
-  +-------------------------------------------------------+
-  |                  FastAPI backend                      |
-  |                                                       |
-  |  ElexonClient --> DataCache --> DataCleaner           |
-  |                                     |                 |
-  |                                     v                 |
-  |        Routes <-- Metrics <-- ForecastSelection       |
-  +--------------------------+----------------------------+
-                             | JSON over HTTP (/api)
-                             v
-  +-------------------------------------------------------+
-  |                   React dashboard                     |
-  |  Cutoff selector, KPI cards, generation chart,        |
-  |  horizon chart, daily error chart, table,             |
-  |  vintage modal, data quality panel                    |
-  +-------------------------------------------------------+
+### 1. System context
+
+```mermaid
+flowchart LR
+    U["Trader / Analyst<br/>(browser)"] -->|"HTTPS"| FE["React Dashboard<br/>(Vite build)"]
+    FE -->|"JSON over HTTP /api"| BE["FastAPI Backend<br/>analysis engine"]
+    BE -->|"first load or refresh"| EL["Elexon BMRS API<br/>FUELHH and WINDFOR"]
+    BE <-->|"read / write"| CA[("JSON file cache<br/>January 2026 snapshot")]
 ```
 
-**Design choices**
+### 2. Backend components
 
-- **File cache instead of a database.** January 2026 is a fixed, small dataset (1,488 half hours). A cached JSON snapshot makes responses instant, avoids migrations, and keeps results reproducible even if the upstream API is slow. The cache can be rebuilt with `POST /api/analysis/refresh`.
-- **Selection logic isolated in one module.** The most important business rule (no look-ahead) lives in `forecast_selection.py` with its own tests, so it is easy to review.
-- **Pydantic schemas** define every response, which gives validation and automatic API docs.
-- **Same-origin in Docker.** Nginx serves the frontend and proxies `/api` to the backend, so no CORS setup is needed there.
+```mermaid
+flowchart TD
+    subgraph API["API layer (FastAPI routers)"]
+        R1["routes_health"]
+        R2["routes_analysis<br/>analysis, horizon, refresh"]
+        R3["routes_forecasts<br/>cutoffs, vintages"]
+        R4["routes_quality"]
+    end
+    subgraph SVC["Service layer"]
+        P["DataPipeline<br/>orchestrator"]
+        CL["ElexonClient<br/>retry with backoff"]
+        DC["DataCacheService<br/>file cache and metadata"]
+        CLN["DataCleaning<br/>filter, validate, dedupe"]
+        SEL["ForecastSelection<br/>cutoff and no look-ahead"]
+        MET["Metrics<br/>MAE RMSE bias percentiles"]
+    end
+    SCH["Pydantic schemas<br/>typed request and response models"]
+    R2 --> P
+    R3 --> P
+    R4 --> P
+    P --> DC
+    DC --> CL
+    P --> CLN
+    P --> SEL
+    P --> MET
+    API --- SCH
+```
 
-More detail is in [`docs/architecture.md`](docs/architecture.md) and [`docs/methodology.md`](docs/methodology.md).
+### 3. Request lifecycle: `GET /api/analysis`
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant N as Nginx or Vercel
+    participant A as FastAPI route
+    participant P as DataPipeline
+    participant S as ForecastSelection
+    participant M as Metrics
+
+    B->>N: GET /api/analysis?cutoff_type=d1_0920&alignment=exact
+    N->>A: forward request
+    A->>A: validate query parameters
+    A->>P: get_analysis(cutoff, alignment, range)
+    Note over P: cleaned data already in memory<br/>(loaded on startup)
+    P->>S: select forecasts for every interval
+    S-->>P: matched records with status
+    P->>M: calculate_metrics(matched records)
+    M-->>P: MAE, RMSE, bias, percentiles
+    P-->>A: AnalysisResponse
+    A-->>B: JSON (metrics, data quality, records)
+```
+
+### 4. Startup and data loading
+
+```mermaid
+flowchart TD
+    ST["Application startup (lifespan)"] --> L{"Cache files present?"}
+    L -- "Yes" --> RD["Read JSON cache"]
+    L -- "No or refresh requested" --> FT["Fetch from Elexon<br/>retry on 429, 502, 503, 504"]
+    FT --> WR["Write cache and metadata"]
+    WR --> RD
+    RD --> CN["Clean and validate records"]
+    CN --> MEM["Hold cleaned data in memory"]
+    MEM --> RDY["Ready to serve requests"]
+    ST -. "if pre-warm fails" .-> LZ["Lazy load on first request"]
+    LZ --> RD
+```
+
+### 5. Frontend component tree
+
+```mermaid
+flowchart TD
+    APP["App.jsx<br/>state and data fetching"] --> HDR["AppHeader"]
+    APP --> CUT["CutoffSelector"]
+    APP --> DRF["DateRangeFilter"]
+    APP --> KPI["KpiCard x N"]
+    APP --> GC["GenerationChart"]
+    APP --> HC["HorizonChart"]
+    APP --> EDC["ErrorDistributionChart"]
+    APP --> FT["ForecastTable"]
+    FT --> VM["VintageModal"]
+    HDR --> DQ["DataQualityPanel"]
+    APP --> LS["LoadingState"]
+    APP --> ES["ErrorState"]
+    APP -. "HTTP" .-> API["services/api.js"]
+```
+
+### 6. Deployment topologies
+
+```mermaid
+flowchart LR
+    subgraph LOCAL["Docker Compose (local or any VM)"]
+        direction TB
+        NG["frontend container<br/>Nginx on :3000<br/>serves SPA, proxies /api"] --> BK["backend container<br/>Uvicorn on :8000<br/>healthcheck /api/health"]
+        BK --- VOL[("named volume<br/>cache")]
+    end
+    subgraph CLOUD["Hosted deployment"]
+        direction TB
+        VC["Frontend<br/>static Vite build"] -->|"VITE_API_BASE_URL"| HB["Backend API<br/>CORS limited to frontend domain"]
+    end
+```
+
+---
+
+## 🗂️ Data Model and Data Lineage
+
+### Source datasets
+
+**FUELHH (actuals)**
+
+- `startTime`: delivery time in UTC, 30 minute resolution
+- `settlementDate`, `settlementPeriod`: UK settlement day and slot (1 to 48)
+- `fuelType`: only `WIND` is used
+- `generation`: metered output in MW
+- `publishTime`: when the outturn record was published
+
+**WINDFOR (forecasts)**
+
+- `startTime`: delivery time being forecast (hourly)
+- `publishTime`: when this forecast version was created
+- `generation`: forecast output in MW
+
+### Output record (one per delivery interval)
+
+- `deliveryTime`, `settlementPeriod`
+- `actualGeneration`, `forecastGeneration`
+- `forecastPublishTime`, `leadHours`
+- `error`, `absError`
+- `status`: `MATCHED`, `MISSING_FORECAST`, `MISSING_ACTUAL` or `MISSING_BOTH`
+
+### Lineage and record counts (January 2026 cache)
+
+```mermaid
+flowchart LR
+    F1["FUELHH raw<br/>29,760 rows<br/>20 fuel types"] -->|"keep WIND"| F2["1,488 wind rows"]
+    F2 -->|"validate and dedupe"| F3["1,488 clean actuals"]
+    W1["WINDFOR raw<br/>19,272 rows"] -->|"drop targets outside window<br/>1,192 rows"| W2["18,080 clean forecast vintages"]
+    F3 --> J["Join on delivery time<br/>+ cutoff selection"]
+    W2 --> J
+    J --> O["744 hourly or 1,488 half-hourly<br/>matched records and metrics"]
+```
+
+---
+
+## 📐 Architecture Decision Records
+
+| # | Decision | Alternatives considered | Why this choice | Trade-off |
+|---|---|---|---|---|
+| ADR-1 | **Default cutoff at the real GB gate closure (09:20 UK)** | 12:00 UTC, "latest forecast" | Matches when orders actually lock; avoids look-ahead bias that would flatter the forecasts by about 6% | Fewer forecast versions are eligible |
+| ADR-2 | **Compute D-1 cutoffs in `Europe/London`, then convert to UTC** | Hard-coded UTC times | Stays correct across daylight saving changes | Needs timezone data (`tzdata`) |
+| ADR-3 | **File cache instead of a database** | PostgreSQL, SQLite | Dataset is small and fixed (1,488 half hours); zero migrations; fully reproducible; instant responses | Not suited to continuous multi-month ingestion |
+| ADR-4 | **Hold cleaned data in memory** | Query per request | Each analysis runs in memory over about 20,000 rows | Memory grows with data volume |
+| ADR-5 | **Never impute missing values** | Fill with zero or interpolate | Zero would fake a huge error; missing data is shown explicitly | Some intervals are excluded from metrics |
+| ADR-6 | **Two alignment modes** | Resample silently | The 30 min vs 60 min mismatch is made visible and the user can choose | Slightly more UI to explain |
+| ADR-7 | **Selection logic in its own module with unit tests** | Inline in routes | The most important business rule is isolated, readable and testable | One more layer of indirection |
+| ADR-8 | **FastAPI + Pydantic v2** | Flask, Django | Typed contracts, automatic OpenAPI docs, input validation | Async features are not heavily used |
+| ADR-9 | **Nginx proxy in Docker, `VITE_API_BASE_URL` elsewhere** | Always cross-origin | Same-origin in containers means no CORS setup; configurable for separate hosting | Two configuration modes to document |
+| ADR-10 | **Report percentiles and a shortfall buffer, not only MAE** | MAE and RMSE only | Buyers care about tail risk, not just the average | Extra concepts for non-technical readers |
 
 ---
 
 ## 🧰 Tech Stack
 
-- **Frontend:** React 18, Vite 5, Tailwind CSS 3, Recharts, Lucide icons
-- **Backend:** Python 3.12, FastAPI, Pydantic v2, HTTPX, Uvicorn
-- **Data:** Elexon BMRS `FUELHH` and `WINDFOR` datasets, January 2026
-- **Testing:** Pytest, Vitest, React Testing Library
-- **Containers:** Docker, Docker Compose, multi-stage build with Nginx
+| Layer | Technology | Purpose |
+|---|---|---|
+| Frontend | React 18, Vite 5 | SPA and fast builds |
+| Styling | Tailwind CSS 3 | Dark analytics theme |
+| Charts | Recharts 2 | Interactive time series and bar charts |
+| Icons | Lucide React | UI icons |
+| Backend | Python 3.12, FastAPI | REST API |
+| Validation | Pydantic v2, pydantic-settings | Typed schemas and env config |
+| HTTP client | HTTPX | Elexon API calls with retries |
+| Server | Uvicorn | ASGI server |
+| Time handling | `zoneinfo`, `tzdata`, `python-dateutil` | UK timezone cutoffs |
+| Testing | Pytest, Vitest, React Testing Library | Backend and frontend tests |
+| Containers | Docker, Docker Compose, Nginx | Reproducible runtime |
 
 ---
 
@@ -270,44 +579,35 @@ More detail is in [`docs/architecture.md`](docs/architecture.md) and [`docs/meth
 .
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                    # FastAPI entrypoint
-│   │   ├── config.py                  # Settings from environment variables
+│   │   ├── main.py                    # App entrypoint, CORS, startup pre-warm
+│   │   ├── config.py                  # Environment-driven settings
 │   │   ├── api/
-│   │   │   ├── routes_health.py       # GET /api/health
-│   │   │   ├── routes_analysis.py     # analysis, horizon, refresh
-│   │   │   ├── routes_forecasts.py    # cutoffs and vintages
-│   │   │   └── routes_quality.py      # data quality report
-│   │   ├── models/schemas.py          # Pydantic models
+│   │   │   ├── routes_health.py       # GET  /api/health
+│   │   │   ├── routes_analysis.py     # GET  /api/analysis, /api/analysis/horizon
+│   │   │   │                          # POST /api/analysis/refresh
+│   │   │   ├── routes_forecasts.py    # GET  /api/forecasts/cutoffs, /vintages
+│   │   │   └── routes_quality.py      # GET  /api/data-quality
+│   │   ├── models/schemas.py          # Pydantic request and response models
 │   │   └── services/
-│   │       ├── elexon.py              # Elexon API client with retries
+│   │       ├── elexon.py              # Elexon BMRS client with retries
 │   │       ├── data_cache.py          # JSON cache with metadata
-│   │       ├── data_cleaning.py       # Filtering, validation, deduplication
-│   │       ├── forecast_selection.py  # Cutoff logic, no look-ahead rule
-│   │       ├── metrics.py             # MAE, RMSE, bias, percentiles
-│   │       └── data_pipeline.py       # Orchestrates the full analysis
-│   ├── data/cache/                    # Cached January 2026 Elexon data
-│   ├── tests/                         # Pytest suite
+│   │       ├── data_cleaning.py       # Filtering, validation, dedupe, interval grid
+│   │       ├── forecast_selection.py  # Cutoffs and the no look-ahead rule
+│   │       ├── metrics.py             # MAE, RMSE, bias, percentiles, extremes
+│   │       └── data_pipeline.py       # Orchestration and horizon analysis
+│   ├── data/cache/                    # Cached Jan 2026 FUELHH and WINDFOR data
+│   ├── tests/                         # 23 pytest tests
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                    # State and layout
+│   │   ├── App.jsx                    # State, data fetching, layout
+│   │   ├── App.test.jsx               # 3 Vitest tests
 │   │   ├── services/api.js            # API client
-│   │   └── components/
-│   │       ├── AppHeader.jsx
-│   │       ├── CutoffSelector.jsx
-│   │       ├── DateRangeFilter.jsx
-│   │       ├── KpiCard.jsx
-│   │       ├── GenerationChart.jsx
-│   │       ├── HorizonChart.jsx
-│   │       ├── ErrorDistributionChart.jsx
-│   │       ├── ForecastTable.jsx
-│   │       ├── VintageModal.jsx
-│   │       ├── DataQualityPanel.jsx
-│   │       ├── LoadingState.jsx
-│   │       └── ErrorState.jsx
-│   ├── nginx.conf                     # Serves the app, proxies /api
-│   └── Dockerfile
+│   │   └── components/                # Header, KPI cards, charts, table, modals
+│   ├── nginx.conf                     # Serves SPA and proxies /api
+│   ├── vite.config.js                 # Build chunking and test config
+│   └── Dockerfile                     # Multi-stage build
 ├── docs/
 │   ├── architecture.md
 │   ├── methodology.md
@@ -331,7 +631,7 @@ docker-compose up --build
 
 - Dashboard: http://localhost:3000
 - API: http://localhost:8000
-- API docs: http://localhost:8000/docs
+- Interactive API docs: http://localhost:8000/docs
 - Health check: http://localhost:8000/api/health
 
 Stop with `docker-compose down`.
@@ -343,12 +643,12 @@ Stop with `docker-compose down`.
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Frontend** (in a second terminal)
+**Frontend** (new terminal)
 
 ```bash
 cd frontend
@@ -360,90 +660,232 @@ Open the URL printed by Vite (usually http://localhost:3000 or http://localhost:
 
 ### Environment variables
 
-Copy `.env.example` to `.env` if you want to change defaults.
+Copy `.env.example` to `.env` to override defaults.
 
-```ini
-# Backend
-PORT=8000
-HOST=0.0.0.0
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-ELEXON_API_BASE_URL=https://data.elexon.co.uk/bmrs/api/v1
-DATA_CACHE_DIR=./data/cache
-
-# Frontend
-# Backend URL for separate deployments.
-# Leave empty (VITE_API_BASE_URL=) to use same-origin /api paths.
-# If not set at all, the app falls back to http://localhost:8000.
-VITE_API_BASE_URL=http://localhost:8000
-```
+| Variable | Default | Meaning |
+|---|---|---|
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Backend bind address |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins for the API |
+| `ELEXON_API_BASE_URL` | `https://data.elexon.co.uk/bmrs/api/v1` | Elexon API root |
+| `DATA_CACHE_DIR` | `backend/data/cache` | Where cached JSON lives |
+| `VITE_API_BASE_URL` | `http://localhost:8000` if unset | Backend URL for the frontend. Set to empty for same-origin `/api` paths |
 
 ---
 
 ## 🔌 API Reference
 
-- `GET /api/health`: service status
-- `GET /api/analysis`: matched records, metrics and data quality for a chosen cutoff
-  - query: `cutoff_type`, `alignment` (`exact` or `hourly_block`), `start_date`, `end_date`
-- `GET /api/analysis/horizon`: error metrics grouped by forecast lead time
-- `POST /api/analysis/refresh`: re-download the data from Elexon and rebuild the cache
-- `GET /api/forecasts/cutoffs`: list of available decision cutoffs
-- `GET /api/forecasts/vintages`: every forecast published for one delivery time
-  - query: `delivery_time`, `cutoff_type`
-- `GET /api/data-quality`: completeness and quality report
+Interactive docs are served at `/docs` (Swagger UI) when the backend runs.
 
-Interactive documentation is served at `/docs` when the backend is running.
+| Method | Endpoint | Purpose | Main query parameters |
+|---|---|---|---|
+| GET | `/api/health` | Liveness and version | none |
+| GET | `/api/analysis` | Matched records, metrics and data quality | `cutoff_type`, `alignment`, `start_date`, `end_date` |
+| GET | `/api/analysis/horizon` | Error metrics grouped by lead time | `alignment`, `start_date`, `end_date` |
+| POST | `/api/analysis/refresh` | Re-fetch from Elexon and rebuild the cache | none |
+| GET | `/api/forecasts/cutoffs` | Available decision cutoffs | none |
+| GET | `/api/forecasts/vintages` | Every forecast published for one delivery time | `delivery_time`, `cutoff_type` |
+| GET | `/api/data-quality` | Completeness and quality report | none |
+
+### Example: one record from `GET /api/analysis`
+
+```json
+{
+  "deliveryTime": "2026-01-15T12:00:00Z",
+  "settlementPeriod": 25,
+  "actualGeneration": 9742.0,
+  "forecastGeneration": 11049.0,
+  "forecastPublishTime": "2026-01-14T07:30:00Z",
+  "leadHours": 28.5,
+  "error": 1307.0,
+  "absError": 1307.0,
+  "status": "MATCHED"
+}
+```
 
 ---
 
-## ✅ Testing
+## 🧪 Testing and Verification
+
+### Quality gates
+
+| Gate | Command | Result |
+|---|---|---|
+| Backend unit and API tests | `pytest -v` | **23 passed** |
+| Frontend component tests | `cd frontend && npm test` | **3 passed** |
+| Production build | `cd frontend && npm run build` | Builds successfully with vendor chunk splitting |
+
+### Backend tests: what each one proves
+
+| Area | Test | What it verifies |
+|---|---|---|
+| Metrics | `test_compute_percentile_linear` | Linear-interpolation percentiles are correct (P0, P25, P50, P75, P100 on a known list) |
+| Metrics | `test_metrics_known_values` | MAE 10.0, RMSE 12.25, bias 5.0, nMAE 6.67%, P50 10.0 on a hand-calculated 4-point dataset |
+| Metrics | `test_metrics_empty_records` | Empty input returns `None` values and no crash or divide-by-zero |
+| Metrics | `test_metrics_ignores_unmatched_records` | Intervals with a missing forecast or actual do not enter the metrics |
+| Metrics | `test_metrics_systematic_underforecast` | Negative bias and the under-forecast count are reported correctly |
+| Data cleaning | `test_expected_intervals_january_2026` | Grid has exactly 1,488 intervals, starts at period 1 on 1 Jan 00:00 and ends at period 48 on 31 Jan 23:30 |
+| Data cleaning | `test_clean_fuelhh_filters_wind_and_dates` | Non-wind fuels and out-of-range dates are dropped, valid wind rows are kept |
+| Data cleaning | `test_clean_windfor_filters_and_preserves_december_publishes` | Duplicates are removed and forecasts published in December for January deliveries are kept |
+| Selection | `test_cutoff_calculation_d1_0920` | Delivery on 15 Jan gives cutoff 14 Jan 09:20 |
+| Selection | `test_cutoff_calculation_d1_1200` | Sensitivity cutoff is 14 Jan 12:00 |
+| Selection | `test_cutoff_calculation_lead_24h` | Rolling cutoff is exactly 24 h before delivery |
+| Selection | `test_cutoff_calculation_latest` | "Latest" cutoff equals the delivery time |
+| Selection | `test_d1_0920_eligibility_boundary` | A forecast published at **09:19 is eligible** and one at **09:21 is excluded** |
+| Selection | `test_forecast_selection_no_eligible_forecast` | When every forecast is after the cutoff the interval is `MISSING_FORECAST`, not zero |
+| Selection | `test_preserves_december_published_forecast` | A forecast published on 31 Dec is eligible for a 1 Jan delivery |
+| API | `test_health_endpoint` | `/api/health` returns status, version and timestamp |
+| API | `test_cutoffs_endpoint` | `d1_0920` exists and is the only default; `d1_1200` exists as non-default |
+| API | `test_analysis_endpoint_default_cutoff` | With no `cutoff_type` the API uses `d1_0920` and returns metrics, percentiles, quality and records |
+| API | `test_analysis_endpoint_with_explicit_cutoff` | Explicit cutoff and date range return matched intervals |
+| API | `test_horizon_endpoint` | Six buckets are returned and a controlled fixture gives the hand-calculated MAE, bias and sample counts per bucket |
+| API | `test_vintages_endpoint` | Vintage endpoint returns the actual value and all forecast versions for one delivery time |
+| API | `test_data_quality_endpoint` | Report states 1,488 expected intervals and includes the resolution notice |
+| Health | `test_api_health_endpoint` | Health route responds correctly in its own test module |
+
+### Frontend tests
+
+| Test | What it verifies |
+|---|---|
+| `renders loading state initially` | A loading indicator shows before data arrives |
+| `renders KPI cards and analysis when data loads` | KPI cards and the analysis view render from API data |
+| `renders error state on API failure` | A failed request shows an error state instead of a blank page |
+
+### Data validation checks you can reproduce
+
+Run from the `backend` folder to confirm the analysis against independent calculations.
 
 ```bash
-# Backend, from the project root
-pytest -v
+python - <<'EOF'
+import sys; sys.path.insert(0, ".")
+from statistics import correlation, mean
+from app.services.data_pipeline import pipeline
 
-# Frontend
-cd frontend
-npm test
+# 1. Time alignment: correlation should peak at zero lag
+r = pipeline.get_analysis(cutoff_type="latest", alignment="exact")
+a = [x.actualGeneration for x in r.records]
+f = [x.forecastGeneration for x in r.records]
+for lag in (-2, -1, 0, 1, 2):
+    xs, ys = (a[lag:], f[:len(f)-lag]) if lag >= 0 else (a[:lag], f[-lag:])
+    print(f"lag {lag:+d}h  correlation {correlation(xs, ys):.4f}")
 
-# Production build check
-npm run build
+# 2. Independent recomputation of headline metrics
+d = pipeline.get_analysis()
+errs = [x.error for x in d.records if x.status == "MATCHED"]
+print("MAE ", round(mean(abs(e) for e in errs), 2), "vs reported", d.metrics.mae)
+print("Bias", round(mean(errs), 2), "vs reported", d.metrics.bias)
+EOF
 ```
 
-The suite covers metric formulas with hand-calculated inputs, cutoff calculation (including the 09:19 vs 09:21 boundary), look-ahead prevention, data cleaning, horizon buckets, and the API routes.
+Expected output:
+
+- Correlation is highest at **lag +0h (0.9540)**, which confirms actuals and forecasts are aligned in time with no offset.
+- Recomputed MAE **2,127.48** and bias **+1,851.53** match the reported values exactly.
+
+### Data integrity checks
+
+| Check | Expected | Observed |
+|---|---|---|
+| Expected delivery intervals in January | 31 x 48 = 1,488 | 1,488 |
+| Wind actuals retrieved | 1,488 | 1,488 (100% complete) |
+| Invalid timestamps / invalid generation / duplicates in actuals | 0 | 0 / 0 / 0 |
+| Matched intervals under the default cutoff (hourly alignment) | 744 | 744 |
+| Missing forecasts under the default cutoff | 0 | 0 |
+| Forecast rows outside the analysis window | dropped | 1,192 dropped, 18,080 kept |
+
+### Manual verification checklist for reviewers
+
+- [ ] Open the live app and confirm the dashboard loads with the default cutoff `Day-Ahead gate closure 09:20 UK`
+- [ ] Change the cutoff to `Day-Ahead 12:00 UK` and confirm MAE drops from about 2,127 to about 2,003 MW
+- [ ] Switch alignment to hourly block and confirm the interval count changes from 744 to 1,488
+- [ ] Open the vintage inspector for 15 Jan 12:00 and confirm 24 versions, with the selected one published 14 Jan 07:30
+- [ ] Open the data quality panel and confirm 1,488 expected intervals and 100% actual completeness
+- [ ] Filter the table by `MISSING_FORECAST` using the 48 h cutoff and confirm 155 intervals appear
+- [ ] Call `/docs` on the backend and try the endpoints
 
 ---
 
 ## ☁️ Deployment
 
-Live app: **PASTE_DEPLOYED_URL**
+**Live app:** PASTE_DEPLOYED_URL
 
-<!-- Describe exactly what you used. Keep this short and true, for example:
-     Frontend on Vercel (root directory: frontend, framework: Vite, env VITE_API_BASE_URL set to the backend URL).
-     Backend on Heroku or Vercel, with CORS_ORIGINS set to the frontend domain. -->
+<!-- Edit this section so it describes exactly what you deployed and where. -->
 
-- **Frontend:** root directory `frontend`, framework preset Vite, build command `npm run build`, output directory `dist`, environment variable `VITE_API_BASE_URL` pointing at the backend.
-- **Backend:** deploy the `backend` folder, set `CORS_ORIGINS` to the frontend domain and `ELEXON_API_BASE_URL` as shown above. Platforms that assign their own port (such as Heroku) should start Uvicorn on `$PORT`.
+- **Frontend:** root directory `frontend`, framework preset Vite, build command `npm run build`, output directory `dist`, environment variable `VITE_API_BASE_URL` set to the backend URL.
+- **Backend:** deploy the `backend` folder. Set `CORS_ORIGINS` to the frontend domain and `ELEXON_API_BASE_URL` to the value in the table above. Platforms that choose their own port (such as Heroku) must start Uvicorn on `$PORT`.
+- **Data:** the January 2026 snapshot ships inside the image, so the app works with no outbound call at startup.
 
 ---
 
-## ⚠️ Assumptions and Limitations
+## 🛡️ Reliability, Security and Performance
 
-- **Scope.** National level wind data from Elexon only, for decisions made in January 2026, as the brief requires.
-- **Cutoff time.** The default 09:20 UK time reflects the EPEX GB day-ahead gate closure. The N2EX auction closes a little later, at about 09:50 UK time. The 09:20 default is the earlier, more conservative choice, and the 12:00 option is kept only to show how a late cutoff changes the results.
-- **Cached data.** The app ships with a cached snapshot of the January 2026 streams for speed and reproducibility. Use the refresh endpoint to pull fresh data.
-- **Resolution.** Forecasts are hourly and actuals are half-hourly, so results are shown under two alignment modes.
-- **Single month.** Findings such as the +1.85 GW bias describe January 2026 and should not be generalised to other months without more data.
+**Reliability**
+
+- Retries with increasing wait on Elexon `429`, `502`, `503` and `504` responses.
+- Startup pre-warm of the data pipeline, with lazy loading on the first request if pre-warm fails.
+- Docker healthcheck on `/api/health` and a frontend that waits for a healthy backend.
+- Cached snapshot keeps the app working if Elexon is unavailable.
+
+**Security**
+
+- No secrets or API keys are required: the Elexon datasets used are public.
+- CORS origins are configurable and should be restricted to the frontend domain in production.
+- Query parameters are validated by FastAPI and Pydantic.
+- No personal data is stored or processed.
+
+**Performance**
+
+- Cleaned data is held in memory, so each analysis request computes over roughly 20,000 records without touching disk or network.
+- Vendor code is split into separate chunks and the larger modals are lazy loaded to keep the initial page light.
+- Gzip is enabled in the Nginx configuration.
+
+---
+
+## ⚠️ Assumptions, Limitations and Roadmap
+
+**Assumptions**
+
+- Scope is national wind data from Elexon only, for decisions made in January 2026, exactly as the brief specifies.
+- The decision moment is modelled as the EPEX GB gate closure (09:20 UK time). N2EX closes a little later (about 09:50), so 09:20 is the conservative choice. Other cutoffs are provided for comparison.
+
+**Limitations**
+
+- Forecasts are hourly while actuals are half-hourly, so two alignment modes are offered.
+- Under the 48 h cutoff, 155 intervals spread across the month have no forecast published at least 48 hours ahead. They are reported as missing instead of being filled.
+- Findings describe one winter month and should not be generalised to other seasons.
+- The file cache suits a fixed dataset. Continuous ingestion would need a database.
+
+**Roadmap**
+
+- Extend to other months and seasons and compare error by season
+- Add demand and price data to translate MW error into pounds of imbalance exposure
+- Bias-corrected forecast as an optional view
+- Probabilistic bands from the empirical error distribution
+- Scheduled refresh job and a CI pipeline running tests and the build on every push
+- Authentication and role-based access for a multi-team deployment
+
+---
+
+## 🧑‍💻 Engineering Practices
+
+- **Separation of concerns:** routers, services, schemas and configuration live in separate modules.
+- **Typed contracts:** every response is defined by a Pydantic model and documented automatically.
+- **Business rule isolation:** the no look-ahead logic is one module with dedicated boundary tests.
+- **Test strategy:** hand-calculated unit tests for formulas, boundary tests for time logic, fixture-based tests for endpoints, component tests for the UI.
+- **Reproducibility:** pinned dependency ranges, lock file for the frontend, Docker images, cached data.
+- **Configuration through environment variables** with a documented `.env.example`.
+- **Documentation:** this README plus `docs/architecture.md`, `docs/methodology.md` and a recording script.
+- **Defensive data handling:** invalid values rejected, duplicates removed, missing data shown explicitly.
 
 ---
 
 ## 🤖 AI Tool Disclosure
 
-Google DeepMind **Antigravity** was used to assist with architecture planning, component scaffolding, test drafting, and documentation. All code, formulas, data pipelines and tests were reviewed, run and verified by me.
+Google DeepMind **Antigravity** was used to assist with architecture planning, component scaffolding, test drafting and documentation. All code, formulas, data pipelines and tests were reviewed, run and verified by me, and the validation checks in this README can be reproduced with the commands shown above.
 
 ---
 
 <div align="center">
 
-Built for the REint Full Stack SWE challenge.
+Built for the REint Full Stack SWE challenge
 
 </div>
